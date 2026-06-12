@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RS & CO | RMC Admin Dashboard</title>
+    <meta name="description" content="RS & CO Ready-Mix Concrete Admin Dashboard - Manage orders, clients, and operations">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <link rel="stylesheet" href="/static/css/rmc.css">
+    <style>
+        /* ── Full-screen plant hero ────────────────────────── */
+        .rmc-hero-fullscreen {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            min-height: 520px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+        .rmc-hero-bg {
+            position: absolute;
+            inset: 0;
+            background: url('/static/images/rmc_plant_trucks.jpg') center center / cover no-repeat;
+            transform: scale(1.04);
+            animation: heroZoom 18s ease-in-out infinite alternate;
+        }
+        @keyframes heroZoom {
+            from { transform: scale(1.04); }
+            to   { transform: scale(1.10); }
+        }
+        .rmc-hero-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+                to bottom,
+                rgba(0,0,0,0.45) 0%,
+                rgba(0,0,0,0.30) 40%,
+                rgba(10,10,10,0.92) 100%
+            );
+        }
+        .rmc-hero-content {
+            position: relative;
+            z-index: 2;
+            padding: 0 48px 56px;
+        }
+        .rmc-hero-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: #D4AF37;
+            text-transform: uppercase;
+            border: 1px solid #D4AF37;
+            padding: 5px 14px;
+            border-radius: 3px;
+            margin-bottom: 16px;
+        }
+        .rmc-hero-title {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(2.2rem, 5vw, 4rem);
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.1;
+            margin: 0 0 14px;
+        }
+        .rmc-hero-title span { color: #D4AF37; }
+        .rmc-hero-subtitle {
+            color: rgba(255,255,255,0.65);
+            font-size: 15px;
+            letter-spacing: .5px;
+            margin-bottom: 28px;
+        }
+        .rmc-hero-stats {
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
+        }
+        .rmc-hero-stat {
+            text-align: center;
+            background: rgba(212,175,55,0.12);
+            border: 1px solid rgba(212,175,55,0.35);
+            border-radius: 8px;
+            padding: 14px 28px;
+            backdrop-filter: blur(6px);
+        }
+        .rmc-hero-stat .val {
+            display: block;
+            font-size: 26px;
+            font-weight: 700;
+            color: #D4AF37;
+        }
+        .rmc-hero-stat .lbl {
+            font-size: 11px;
+            color: rgba(255,255,255,0.55);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+        /* Scroll-down arrow */
+        .hero-scroll-arrow {
+            position: absolute;
+            bottom: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3;
+            color: #D4AF37;
+            animation: bounce 2s infinite;
+            font-size: 22px;
+        }
+        @keyframes bounce {
+            0%,100% { transform: translateX(-50%) translateY(0); }
+            50%      { transform: translateX(-50%) translateY(8px); }
+        }
+        /* ── Quick-action buttons in Billing & Expense header ── */
+        .be-quick-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .btn-logout-quick {
+            background: #dc3545;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background .2s;
+        }
+        .btn-logout-quick:hover { background: #b02a37; }
+        .btn-home-quick {
+            background: transparent;
+            color: #D4AF37;
+            border: 1.5px solid #D4AF37;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background .2s, color .2s;
+        }
+        .btn-home-quick:hover { background: #D4AF37; color: #1a1a1a; }
+
+        /* ── Responsive for hero & quick actions ───────────── */
+        @media (max-width: 992px) {
+            .rmc-hero-content        { padding: 0 28px 40px; }
+            .rmc-hero-title          { font-size: clamp(1.8rem, 4vw, 3rem); }
+            .rmc-hero-stats          { gap: 14px; }
+            .rmc-hero-stat           { padding: 12px 18px; }
+        }
+
+        @media (max-width: 768px) {
+            .rmc-hero-content        { padding: 0 16px 28px; }
+            .rmc-hero-title          { font-size: clamp(1.5rem, 6vw, 2.2rem); }
+            .rmc-hero-subtitle       { font-size: 13px; letter-spacing: .3px; }
+            .rmc-hero-badge          { font-size: 9px; letter-spacing: 2px; padding: 4px 10px; }
+            .rmc-hero-stats          { flex-direction: column; gap: 8px; }
+            .rmc-hero-stat           { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; text-align: left; border-radius: 6px; }
+            .rmc-hero-stat .val      { font-size: 18px; margin-bottom: 0; }
+            .rmc-hero-stat .lbl      { font-size: 9px; }
+            .hero-scroll-arrow       { font-size: 18px; bottom: 12px; }
+            /* Quick actions in Billing tab */
+            .be-quick-actions        { flex-direction: column; width: 100%; }
+            .btn-logout-quick,
+            .btn-home-quick          { width: 100%; justify-content: center; font-size: 12px; }
+        }
+
+        @media (max-width: 480px) {
+            .rmc-hero-content        { padding: 0 12px 22px; }
+            .rmc-hero-title          { font-size: 1.4rem; }
+            .rmc-hero-subtitle       { font-size: 12px; }
+            .rmc-hero-stats          { gap: 6px; }
+        }
+    </style>
+    <link rel="stylesheet" href="/static/css/responsive.css">
+</head>
+
+<body>
+
+    <!-- Header / Nav -->
+    <header class="luxury-header">
+        <div class="nav-container">
+            <a href="/" class="brand-logo">
+                <img class="brand-logo-img logo-img-blend" src="/static/images/logo.png" alt="RS&CO Logo">
+                <div class="brand-logo-text">
+                    <span class="brand-name">R SUNDARAM & CO</span>
+                    <span class="brand-tagline">Strong Roads Build To LAST</span>
+                </div>
+            </a>
+            <nav class="desktop-nav">
+                <a href="/" class="nav-link">Main Website</a>
+                <a href="/rmc-portal" class="nav-link">Client Portal</a>
+                <a href="/admin" class="nav-link">Plant Admin</a>
+                <span class="nav-link" id="user-welcome">Welcome, <span id="user-name">Admin</span></span>
+                <a href="/logout" class="btn-gold nav-cta">Logout</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <!-- Full-screen Plant Hero -->
+        <section class="rmc-hero-fullscreen">
+            <div class="rmc-hero-bg"></div>
+            <div class="rmc-hero-overlay"></div>
+
+            <div class="rmc-hero-content">
+                <div class="rmc-hero-badge">Ready-Mix Concrete Operations</div>
+                <h1 class="rmc-hero-title">Admin <span>Dashboard</span></h1>
+                <p class="rmc-hero-subtitle">R SUNDARAM &amp; CO &nbsp;&bull;&nbsp; Strong Roads &nbsp;&bull;&nbsp; Build To Last</p>
+
+                <div class="rmc-hero-stats">
+                    <div class="rmc-hero-stat">
+                        <span class="val" id="stat-orders">0</span>
+                        <span class="lbl">Total Orders</span>
+                    </div>
+                    <div class="rmc-hero-stat">
+                        <span class="val" id="stat-clients">0</span>
+                        <span class="lbl">Active Clients</span>
+                    </div>
+                    <div class="rmc-hero-stat">
+                        <span class="val" id="stat-invoices">0</span>
+                        <span class="lbl">Pending Invoices</span>
+                    </div>
+                    <div class="rmc-hero-stat">
+                        <span class="val" id="stat-revenue">₹0</span>
+                        <span class="lbl">Total Revenue</span>
+                    </div>
+                    <div class="rmc-hero-stat" id="database-mode" style="padding:14px 18px;">
+                        <span class="val" style="font-size:13px;">LOCAL</span>
+                        <span class="lbl">DB Mode</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-scroll-arrow">↓</div>
+        </section>
+
+        <!-- Navigation Tabs -->
+        <section class="rmc-tabs-section">
+            <div class="section-container">
+                <div class="rmc-tabs">
+                    <button class="rmc-tab active" data-tab="dashboard">Dashboard</button>
+                    <button class="rmc-tab" data-tab="orders">Orders</button>
+                    <button class="rmc-tab" data-tab="clients">Clients</button>
+                    <button class="rmc-tab" data-tab="invoices">Invoices</button>
+                    <button class="rmc-tab" data-tab="billing-expense">Billing & Expense</button>
+                    <button class="rmc-tab" data-tab="reports">Reports</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dashboard Tab (stats now in hero) -->
+        <section id="dashboard-tab" class="rmc-tab-content active">
+            <div class="section-container">
+
+                <div class="dashboard-grid">
+                    <div class="dashboard-panel">
+                        <div class="panel-header">
+                            <h2>Recent Orders</h2>
+                            <button class="btn-outline" onclick="exportOrders()">Export</button>
+                        </div>
+                        <div class="panel-body" id="recent-orders-list">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-panel">
+                        <div class="panel-header">
+                            <h2>Pending Approvals</h2>
+                        </div>
+                        <div class="panel-body" id="pending-orders-list">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Orders Tab -->
+        <section id="orders-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header">
+                        <h2>All Orders</h2>
+                        <div class="panel-actions">
+                            <select id="order-status-filter" class="filter-select">
+                                <option value="">All Status</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Approved">Approved</option>
+                                <option value="In Production">In Production</option>
+                                <option value="Dispatched">Dispatched</option>
+                                <option value="Delivered">Delivered</option>
+                                <option value="Cancelled">Cancelled</option>
+                            </select>
+                            <button class="btn-outline" onclick="exportOrders()">Export Excel</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <div id="all-orders-list" class="rmc-list">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Clients Tab -->
+        <section id="clients-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header">
+                        <h2>Client Management</h2>
+                        <button class="btn-gold" onclick="showAddClientModal()">+ Add Client</button>
+                    </div>
+                    <div class="panel-body">
+                        <div id="clients-list" class="rmc-list">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Invoices Tab -->
+        <section id="invoices-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header">
+                        <h2>Invoice Management</h2>
+                        <button class="btn-outline" onclick="exportInvoices()">Export Excel</button>
+                    </div>
+                    <div class="panel-body">
+                        <div id="invoices-list" class="rmc-list">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Reports Tab -->
+        <section id="reports-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header">
+                        <h2>Reports & Export</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="reports-grid">
+                            <div class="report-card">
+                                <h3>Orders Report</h3>
+                                <p>Export all order data with status and delivery information.</p>
+                                <button class="btn-gold" onclick="exportOrders()">Download Excel</button>
+                            </div>
+                            <div class="report-card">
+                                <h3>Invoices Report</h3>
+                                <p>Export all invoices with payment status and amounts.</p>
+                                <button class="btn-gold" onclick="exportInvoices()">Download Excel</button>
+                            </div>
+                            <div class="report-card">
+                                <h3>Payments Report</h3>
+                                <p>Export all payment records with method and reference.</p>
+                                <button class="btn-gold" onclick="exportPayments()">Download Excel</button>
+                            </div>
+                            <div class="report-card">
+                                <h3>Client Accounts</h3>
+                                <p>Export client details including balances and credit limits.</p>
+                                <button class="btn-gold" onclick="exportClients()">Download Excel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Billing & Expense Tab -->
+        <section id="billing-expense-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="dashboard-header-row" style="align-items:center;">
+                    <div>
+                        <h2 class="section-title">Billing &amp; Expense Management</h2>
+                        <p class="section-subtitle">Manage manual billing records and track expenses</p>
+                    </div>
+                    <div class="be-quick-actions">
+                        <a href="/billing-expense" target="_blank" class="btn-gold">Open Full Module</a>
+                        <a href="/" class="btn-home-quick">🏠 Main Website</a>
+                        <a href="/logout" class="btn-logout-quick">🔒 Logout</a>
+                    </div>
+                </div>
+                
+                <div class="report-cards-grid">
+                    <div class="report-card">
+                        <h3>Manual Billing</h3>
+                        <p>Create and manage manual delivery challans and bills.</p>
+                        <button class="btn-gold" onclick="window.open('/billing-expense', '_blank')">Manage Billing</button>
+                    </div>
+                    <div class="report-card">
+                        <h3>Expense Tracking</h3>
+                        <p>Track fuel, maintenance, labor, and miscellaneous expenses.</p>
+                        <button class="btn-gold" onclick="window.open('/billing-expense', '_blank')">Manage Expenses</button>
+                    </div>
+                    <div class="report-card">
+                        <h3>Export Reports</h3>
+                        <p>Export billing and expense data to Excel.</p>
+                        <button class="btn-gold" onclick="window.open('/billing-expense', '_blank')">Export Data</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Add Client Modal -->
+    <div id="add-client-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Client</h3>
+                <button class="modal-close" onclick="closeModal('add-client-modal')">×</button>
+            </div>
+            <form id="add-client-form" class="rmc-form">
+                <div class="form-group">
+                    <label>Company Name *</label>
+                    <input type="text" id="client-company" required>
+                </div>
+                <div class="form-group">
+                    <label>Contact Person *</label>
+                    <input type="text" id="client-contact" required>
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="client-email" required>
+                </div>
+                <div class="form-group">
+                    <label>Phone *</label>
+                    <input type="text" id="client-phone" required>
+                </div>
+                <div class="form-group">
+                    <label>Billing Address *</label>
+                    <textarea id="client-billing-address" rows="2" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Shipping Address</label>
+                    <textarea id="client-shipping-address" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>GST Number</label>
+                    <input type="text" id="client-gst">
+                </div>
+                <div class="form-group">
+                    <label>Credit Limit (₹)</label>
+                    <input type="number" id="client-credit-limit" min="0" step="1000" value="0">
+                </div>
+                <button type="submit" class="btn-gold btn-block">Add Client</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Order Detail Modal -->
+    <div id="order-detail-modal" class="modal hidden">
+        <div class="modal-content large-modal">
+            <div class="modal-header">
+                <h3>Order Details</h3>
+                <button class="modal-close" onclick="closeModal('order-detail-modal')">×</button>
+            </div>
+            <div id="order-detail-content">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast-notification hidden"></div>
+
+    <script src="/static/js/rmc_admin.js"></script>
+</body>
+</html>
+

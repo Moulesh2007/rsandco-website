@@ -1,0 +1,186 @@
+{
+  "manual_billing": [
+    {
+      "id": "bill-3",
+      "company_name": "TEST COMPANY",
+      "phone": "9876543210",
+      "address": "123 Test St, Chennai",
+      "date": "2026-06-12",
+      "time": "10:00",
+      "vehicle_number": "TN11AD0001",
+      "driver_name": "Test Driver",
+      "unloading_time": "10:00",
+      "grade": "M25",
+      "cubic_meters": 10,
+      "loading_time": "09:00",
+      "rate_per_cubic": 3500,
+      "total_amount": 35000,
+      "advance_amount": 5000,
+      "balance_amount": 30000,
+      "created_at": "2026-06-12T10:49:32.025530",
+      "created_by": "system"
+    },
+    {
+      "id": "bill-2",
+      "company_name": "SRI CONSTRUCTIONS",
+      "phone": "7397223252",
+      "address": "VELS COLLEGE",
+      "date": "2026-04-04",
+      "time": "01:14",
+      "vehicle_number": "TN10CD7153",
+      "driver_name": "RAJESH",
+      "unloading_time": "06:30",
+      "grade": "M25",
+      "cubic_meters": 19,
+      "loading_time": "05:30",
+      "rate_per_cubic": 5800,
+      "total_amount": 110200,
+      "advance_amount": 200000,
+      "balance_amount": -89800,
+      "created_at": "2026-06-12T12:13:11.150809",
+      "created_by": "manager"
+    }
+  ],
+  "expenses": [
+    {
+      "id": "expense-7",
+      "category": "Raw Material",
+      "date": "2026-06-12",
+      "description": "sr cements",
+      "material_type": "M-Sand",
+      "quantity": 10,
+      "rate_per_ton": 1300,
+      "amount": 13000,
+      "total_amount": 13000,
+      "advance_amount": 10000,
+      "balance_amount": 3000,
+      "created_at": "2026-06-12T11:21:11.692309",
+      "created_by": "admin"
+    },
+    {
+      "id": "expense-2",
+      "category": "Fuel",
+      "date": "2026-06-09",
+      "description": "",
+      "material_type": "",
+      "quantity": "",
+      "rate_per_ton": "",
+      "amount": 10000,
+      "total_amount": 10000,
+      "advance_amount": 0,
+      "balance_amount": 10000,
+      "created_at": "2026-06-12T12:33:55.807656",
+      "created_by": "admin"
+    }
+  ],
+  "rmc_orders": [
+    {
+      "id": "order-1",
+      "order_number": "RMC-20260610-0001",
+      "user_id": "user-3",
+      "customer_name": "Test Customer",
+      "phone": "+91 98765 43213",
+      "order_date": "2026-06-10T10:00:00",
+      "delivery_date": "2026-06-15",
+      "delivery_address": "123 Test Street, Chennai",
+      "status": "Approved",
+      "total_amount": 15000.0,
+      "notes": "Test order",
+      "items": [
+        {
+          "grade_id": "grade-1",
+          "quantity": 5,
+          "unit_price": 3000.0,
+          "subtotal": 15000.0
+        }
+      ],
+      "approved_by": "admin",
+      "approved_at": "2026-06-10T10:30:00"
+    }
+  ],
+  "rmc_order_items": [
+    {
+      "id": "item-1",
+      "order_id": "order-1",
+      "grade_id": "grade-1",
+      "quantity_cubic_meters": 5,
+      "unit_price": 3000.0,
+      "subtotal": 15000.0
+    }
+  ],
+  "rmc_invoices": [
+    {
+      "id": "invoice-1",
+      "invoice_number": "INV-20260610-0001",
+      "order_id": "order-1",
+      "invoice_date": "2026-06-10",
+      "due_date": "2026-07-10",
+      "subtotal": 15000.0,
+      "tax_amount": 0,
+      "total_amount": 15000.0,
+      "status": "Pending",
+      "notes": "Auto-generated invoice for order RMC-20260610-0001"
+    }
+  ],
+  "rmc_payments": [],
+  "rmc_clients": [
+    {
+      "id": "client-1",
+      "company_name": "Apex Construction Ltd",
+      "contact_person": "Rajesh Kumar",
+      "email": "rajesh@apexconstruction.com",
+      "phone": "+91 98765 43210",
+      "billing_address": "123 Industrial Area, Chennai, Tamil Nadu 600001",
+      "shipping_address": "123 Industrial Area, Chennai, Tamil Nadu 600001",
+      "gst_number": "33AABCU9603R1ZN",
+      "credit_limit": 5000000.0,
+      "current_balance": 0.0,
+      "is_active": true
+    }
+  ],
+  "submissions": [],
+  "newsletter": [],
+  "rmc_users": [
+    {
+      "id": "user-1",
+      "username": "admin",
+      "email": "admin@rsandco.com",
+      "password_hash": "scrypt:32768:8:1$blQEH22odEOEPQNz$82a24455cff42c7701fa29fd3b1ed2a92d018b442a71ae13ce0bbcaa3f03f2c907ad2ad9a33a084c317ed206f8c85235a2b8c0fe50a0bc5e3188007e226f6fe6",
+      "full_name": "System Administrator",
+      "role": "admin",
+      "phone": "+91 98765 43211",
+      "is_active": true
+    },
+    {
+      "id": "user-2",
+      "username": "manager",
+      "email": "manager@rsandco.com",
+      "password_hash": "scrypt:32768:8:1$BiwrTA87x7MXEzwO$68295d43584334cd14e16fdab35702dfead0af02eefba6629e3579e8f52cf95693fbbe8a1bbd445ad50f58270d0f3afa569e053127160addbfb1dfe265829b8e",
+      "full_name": "Operations Manager",
+      "role": "manager",
+      "phone": "+91 98765 43212",
+      "is_active": true
+    },
+    {
+      "id": "user-3",
+      "username": "client",
+      "email": "client@test.com",
+      "password_hash": "scrypt:32768:8:1$dDXRyluZ1MFNCsOG$5a15a7beaf76a3d1c15d33b9ce7b4205ab6fef6e1a8d71e0e4f8e70601825c495070e52492bc4c92d9d67410b0338f1020f87b92b9b584133d770dfcbf6542da",
+      "full_name": "Test Client",
+      "role": "client",
+      "phone": "+91 98765 43213",
+      "is_active": true
+    },
+    {
+      "id": "user-6",
+      "username": "moulesh",
+      "email": "mouleshmr11@gmail.com",
+      "password_hash": "scrypt:32768:8:1$wNEd5Jc9eI72wHub$9034de9c061421fddadc76191e4c17f0cb99848bd40fd573d8d50c9691e825dbc172e16b98506553a13e80a73c519d606d47a2ad1ce0cfd3dbfe3b9d0e046dc7",
+      "full_name": "M MOULESH",
+      "role": "client",
+      "phone": "07904435776",
+      "is_active": true,
+      "created_at": "2026-06-12T07:22:49.290925"
+    }
+  ]
+}

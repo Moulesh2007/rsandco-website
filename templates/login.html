@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RS &amp; CO | Client Login</title>
+    <meta name="description" content="Login to your RS &amp; CO client portal — manage orders, invoices and more.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/rmc.css">
+    <link rel="stylesheet" href="/static/css/responsive.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            min-height: 100vh;
+            background: #050505;
+            font-family: 'Montserrat', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* ── Animated BG ─────────────────────────────── */
+        .auth-bg {
+            position: fixed; inset: 0; z-index: 0;
+            background: url('/static/images/rmc_plant_trucks.jpg') center/cover no-repeat;
+            animation: bgZoom 20s ease-in-out infinite alternate;
+        }
+        @keyframes bgZoom { from{transform:scale(1)} to{transform:scale(1.08)} }
+        .auth-overlay {
+            position: fixed; inset: 0; z-index: 1;
+            background: linear-gradient(135deg,
+                rgba(5,5,5,0.88) 0%,
+                rgba(0,0,0,0.72) 50%,
+                rgba(10,5,0,0.90) 100%);
+        }
+
+        /* ── Card ────────────────────────────────────── */
+        .auth-wrap {
+            position: relative; z-index: 2;
+            width: 100%; max-width: 460px;
+            padding: 16px;
+        }
+
+        .auth-card {
+            background: rgba(15,15,15,0.92);
+            border: 1px solid rgba(212,175,55,0.3);
+            border-radius: 12px;
+            padding: 44px 40px;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,175,55,0.05);
+            backdrop-filter: blur(20px);
+            animation: cardIn .5s cubic-bezier(.16,1,.3,1);
+        }
+        @keyframes cardIn { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+
+        /* ── Logo / Title ─────────────────────────────── */
+        .auth-logo-row {
+            display: flex; align-items: center; gap: 14px;
+            margin-bottom: 28px;
+        }
+        .auth-logo { height: 56px; width: auto; }
+        .auth-brand-name {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.1rem; color: #fff; font-weight: 700;
+        }
+        .auth-brand-tag {
+            font-size: 0.62rem; color: #D4AF37;
+            letter-spacing: 2px; text-transform: uppercase; display: block;
+        }
+
+        .auth-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.9rem; font-weight: 700; color: #fff;
+            margin-bottom: 6px;
+        }
+        .auth-subtitle { color: #888; font-size: 0.88rem; margin-bottom: 32px; }
+
+        /* ── Fields ───────────────────────────────────── */
+        .field-group { margin-bottom: 20px; position: relative; }
+
+        .field-group label {
+            display: block; font-size: 0.78rem; font-weight: 600;
+            color: #D4AF37; text-transform: uppercase; letter-spacing: 1.2px;
+            margin-bottom: 8px;
+        }
+
+        .field-group input {
+            width: 100%; padding: 13px 44px 13px 16px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(212,175,55,0.25);
+            border-radius: 6px; color: #fff;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.9rem; transition: border-color .25s, box-shadow .25s;
+            min-height: 48px;
+        }
+        .field-group input:focus {
+            outline: none;
+            border-color: #D4AF37;
+            box-shadow: 0 0 0 3px rgba(212,175,55,0.12);
+        }
+        .field-group input::placeholder { color: #555; }
+
+        /* password toggle */
+        .pw-toggle {
+            position: absolute; right: 14px; top: 38px;
+            background: none; border: none; cursor: pointer;
+            color: #666; font-size: 16px; padding: 4px;
+            transition: color .2s;
+        }
+        .pw-toggle:hover { color: #D4AF37; }
+
+        /* ── Submit ───────────────────────────────────── */
+        .btn-auth {
+            width: 100%; padding: 14px;
+            background: linear-gradient(135deg, #D4AF37 0%, #af9063 100%);
+            color: #1a1a1a; border: none; border-radius: 6px;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.85rem; font-weight: 700;
+            letter-spacing: 2px; text-transform: uppercase;
+            cursor: pointer; transition: all .25s;
+            position: relative; overflow: hidden;
+            margin-top: 8px; min-height: 50px;
+        }
+        .btn-auth::after {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);
+            transform: translateX(-100%); transition: .5s;
+        }
+        .btn-auth:hover::after { transform: translateX(100%); }
+        .btn-auth:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(212,175,55,.35); }
+        .btn-auth:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+        /* ── Alert ────────────────────────────────────── */
+        .auth-alert {
+            padding: 12px 16px; border-radius: 6px;
+            font-size: 0.84rem; margin-bottom: 18px;
+            display: none; align-items: center; gap: 10px;
+        }
+        .auth-alert.error { background: rgba(220,53,69,.15); border:1px solid rgba(220,53,69,.4); color: #ff6b7a; display: flex; }
+        .auth-alert.success { background: rgba(40,167,69,.15); border:1px solid rgba(40,167,69,.4); color: #5cdb80; display: flex; }
+
+        /* ── Footer links ─────────────────────────────── */
+        .auth-footer { margin-top: 28px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,.06); }
+        .auth-footer p { font-size: 0.84rem; color: #666; margin-bottom: 10px; text-align: center; }
+        .auth-footer a { color: #D4AF37; text-decoration: none; font-weight: 600; transition: color .2s; }
+        .auth-footer a:hover { color: #e5c158; }
+
+        /* ── Back link ───────────────────────────────── */
+        .auth-back {
+            display: inline-flex; align-items: center; gap: 6px;
+            color: #555; font-size: 0.8rem; text-decoration: none;
+            margin-bottom: 20px; transition: color .2s;
+        }
+        .auth-back:hover { color: #D4AF37; }
+
+        /* ── Divider / role badges ────────────────────── */
+        .role-info {
+            margin-top: 20px; padding: 14px 16px;
+            background: rgba(212,175,55,0.06);
+            border: 1px solid rgba(212,175,55,.15);
+            border-radius: 6px; font-size: 0.78rem; color: #888;
+            line-height: 1.6;
+        }
+        .role-info strong { color: #D4AF37; }
+
+        /* spinner */
+        .spinner {
+            width: 18px; height: 18px;
+            border: 2px solid rgba(0,0,0,.3);
+            border-top-color: #1a1a1a;
+            border-radius: 50%; animation: spin .7s linear infinite;
+            display: inline-block; vertical-align: middle; margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 480px) {
+            .auth-card { padding: 30px 20px; }
+            .auth-title { font-size: 1.6rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-bg"></div>
+    <div class="auth-overlay"></div>
+
+    <div class="auth-wrap">
+        <a href="/" class="auth-back">&#8592; Back to Main Website</a>
+
+        <div class="auth-card">
+            <div class="auth-logo-row">
+                <img src="/static/images/logo.png" alt="RS&CO" class="auth-logo">
+                <div>
+                    <span class="auth-brand-name">R SUNDARAM &amp; CO</span>
+                    <span class="auth-brand-tag">Strong Roads Build To Last</span>
+                </div>
+            </div>
+
+            <h1 class="auth-title">Welcome Back</h1>
+            <p class="auth-subtitle">Sign in to your client account to manage orders &amp; invoices</p>
+
+            <div id="auth-alert" class="auth-alert"></div>
+
+            <form id="login-form" autocomplete="on" novalidate>
+                <div class="field-group">
+                    <label for="login-email">Email Address</label>
+                    <input type="email" id="login-email" name="email"
+                           placeholder="you@example.com" required autocomplete="email">
+                </div>
+
+                <div class="field-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" name="password"
+                           placeholder="Enter your password" required autocomplete="current-password">
+                    <button type="button" class="pw-toggle" id="pw-toggle-btn"
+                            aria-label="Toggle password visibility">&#128065;</button>
+                </div>
+
+                <button type="submit" class="btn-auth" id="login-btn">Sign In</button>
+            </form>
+
+            <div class="role-info">
+                <strong>Client Portal:</strong> View your RMC orders, track deliveries &amp; download invoices.<br>
+                <strong>Admin / Manager:</strong> Use the same page — you'll be redirected automatically.
+            </div>
+
+            <div class="auth-footer">
+                <p>Don't have an account? <a href="/register">Create one free &rarr;</a></p>
+                <p><a href="/">&#127968; Return to Main Website</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Password toggle
+        document.getElementById('pw-toggle-btn').addEventListener('click', () => {
+            const inp = document.getElementById('login-password');
+            const btn = document.getElementById('pw-toggle-btn');
+            inp.type = inp.type === 'password' ? 'text' : 'password';
+            btn.innerHTML = inp.type === 'password' ? '&#128065;' : '&#128064;';
+        });
+
+        // Login form
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email    = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+            const btn      = document.getElementById('login-btn');
+            const alert    = document.getElementById('auth-alert');
+
+            if (!email || !password) {
+                showAlert('Please fill in all fields.', 'error'); return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Signing in…';
+            alert.className = 'auth-alert'; alert.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: email, password })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showAlert('Login successful! Redirecting…', 'success');
+                    setTimeout(() => {
+                        const role = data.user?.role;
+                        if (role === 'admin' || role === 'manager') {
+                            window.location.href = '/rmc-admin';
+                        } else {
+                            window.location.href = '/rmc-portal';
+                        }
+                    }, 900);
+                } else {
+                    showAlert(data.error || 'Invalid email or password. Please try again.', 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = 'Sign In';
+                }
+            } catch (err) {
+                showAlert('Connection error. Please try again.', 'error');
+                btn.disabled = false;
+                btn.innerHTML = 'Sign In';
+            }
+        });
+
+        function showAlert(msg, type) {
+            const el = document.getElementById('auth-alert');
+            el.textContent = msg;
+            el.className = 'auth-alert ' + type;
+        }
+    </script>
+</body>
+</html>

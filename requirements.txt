@@ -1,0 +1,14 @@
+Flask==3.0.3
+Werkzeug==3.1.8
+gunicorn==22.0.0
+python-dotenv==1.0.1
+openpyxl==3.1.5
+reportlab==4.5.1
+pillow==12.2.0
+supabase==2.4.5
+postgrest==0.16.5
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+click==8.4.1
+blinker==1.9.0

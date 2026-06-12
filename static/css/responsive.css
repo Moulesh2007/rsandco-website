@@ -1,0 +1,302 @@
+/* ============================================================
+   RESPONSIVE.CSS — Mobile-first responsive overrides
+   Covers: Main site, RMC Admin, Billing & Expense, Login
+   Breakpoints: 1200 | 992 | 768 | 576 | 360
+   ============================================================ */
+
+/* ─── Fluid base ─────────────────────────────────────────── */
+html { font-size: 16px; }
+img, video { max-width: 100%; height: auto; }
+table  { width: 100%; }
+
+/* ─── Touch-target minimum ───────────────────────────────── */
+button, a, [role="button"] { min-height: 44px; }
+
+/* ============================================================
+   LARGE TABLETS  ≤ 1200px
+   ============================================================ */
+@media (max-width: 1200px) {
+    .section-container       { padding: 80px 32px; }
+    .nav-container           { padding: 14px 24px; }
+    .founder-grid            { gap: 40px; }
+    .rmc-hero-content        { padding: 0 32px 44px; }
+}
+
+/* ============================================================
+   TABLETS  ≤ 992px
+   ============================================================ */
+@media (max-width: 992px) {
+
+    /* ── Global ── */
+    .section-container       { padding: 60px 24px; }
+    .section-title           { font-size: 2rem; }
+
+    /* ── Navbar ── */
+    .brand-logo-img          { height: 56px; }
+    .brand-name              { font-size: 0.95rem; }
+    .desktop-nav             { gap: 18px; }
+
+    /* ── Hero ── */
+    .hero-content            { max-width: 100%; }
+    .hero-title              { font-size: 2.8rem; }
+
+    /* ── Founder ── */
+    .founder-grid            { grid-template-columns: 1fr; gap: 36px; }
+
+    /* ── Contact ── */
+    .contact-grid            { grid-template-columns: 1fr; gap: 40px; }
+
+    /* ── Footer ── */
+    .footer-container        { grid-template-columns: 1fr 1fr; gap: 40px; }
+    .footer-newsletter       { grid-column: span 2; }
+
+    /* ── Admin dashboard grid ── */
+    .dashboard-grid          { grid-template-columns: 1fr; gap: 24px; }
+    .dashboard-header-row    { flex-direction: column; align-items: flex-start; gap: 16px; }
+
+    /* ── RMC hero stats ── */
+    .rmc-hero-stats          { gap: 16px; }
+    .rmc-hero-stat           { padding: 12px 20px; }
+    .rmc-hero-stat .val      { font-size: 22px; }
+    .rmc-hero-title          { font-size: clamp(1.8rem, 4vw, 3rem); }
+    .rmc-hero-content        { padding: 0 24px 40px; }
+
+    /* ── Billing/Expense form grid ── */
+    .form-grid               { grid-template-columns: 1fr 1fr !important; }
+    .calc-display            { grid-template-columns: 1fr 1fr 1fr; }
+
+    /* ── Stats grid ── */
+    .stats-grid              { grid-template-columns: 1fr 1fr !important; }
+}
+
+/* ============================================================
+   MOBILE LANDSCAPE / SMALL TABLETS  ≤ 768px
+   ============================================================ */
+@media (max-width: 768px) {
+
+    /* ── Navbar ── */
+    .desktop-nav             { display: none; }
+    .mobile-menu-btn         { display: flex; }
+    .brand-logo-img          { height: 48px; }
+    .brand-name              { font-size: 0.85rem; }
+    .brand-tagline           { display: none; }
+    .nav-container           { padding: 12px 16px; }
+
+    /* ── Buttons ── */
+    .hero-buttons            { flex-direction: column; gap: 12px; align-items: center; }
+    .btn-gold, .btn-outline  { padding: 12px 22px; font-size: 0.78rem; }
+
+    /* ── Hero ── */
+    .hero-section            { padding: 0 16px; }
+    .hero-title              { font-size: 2.2rem; letter-spacing: 2px; }
+    .hero-subtitle           { font-size: 0.72rem; letter-spacing: 3.5px; }
+    .hero-tagline            { font-size: 0.92rem; }
+    .hero-badge              { font-size: 0.68rem; letter-spacing: 3px; }
+
+    /* ── Sections ── */
+    .section-container       { padding: 52px 16px; }
+    .section-title           { font-size: 1.75rem; }
+    .section-description     { font-size: 0.9rem; }
+
+    /* ── Founder ── */
+    .founder-content h3      { font-size: 1.7rem; }
+    .founder-bio             { font-size: 0.9rem; }
+    .founder-vision-box      { font-size: 1rem; }
+
+    /* ── Plants ── */
+    .plants-grid             { grid-template-columns: 1fr !important; }
+    .plant-card              { padding: 24px; }
+
+    /* ── Projects ── */
+    .projects-grid           { grid-template-columns: 1fr !important; }
+
+    /* ── Contact ── */
+    .contact-grid            { grid-template-columns: 1fr; }
+
+    /* ── Footer ── */
+    .footer-container        { grid-template-columns: 1fr; gap: 32px; }
+    .footer-newsletter       { grid-column: span 1; }
+    .footer-bottom           { font-size: 0.75rem; text-align: center; padding: 16px; }
+
+    /* ── RMC Hero ── */
+    .rmc-hero-fullscreen     { min-height: 100vh; }
+    .rmc-hero-content        { padding: 0 16px 32px; }
+    .rmc-hero-title          { font-size: clamp(1.6rem, 6vw, 2.4rem); }
+    .rmc-hero-subtitle       { font-size: 13px; }
+    .rmc-hero-stats          { flex-direction: column; gap: 10px; }
+    .rmc-hero-stat           { padding: 12px 16px; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+    .rmc-hero-stat .val      { font-size: 20px; }
+    .rmc-hero-stat .lbl      { font-size: 10px; }
+    .rmc-hero-badge          { font-size: 10px; }
+
+    /* ── RMC Tabs ── */
+    .rmc-tabs                { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    .rmc-tab                 { font-size: 0.75rem; padding: 8px 12px; letter-spacing: 0.5px; }
+
+    /* ── RMC List items ── */
+    .rmc-list-item           { flex-direction: column; gap: 12px; align-items: flex-start; }
+    .item-actions            { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+    .panel-header            { flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; }
+    .panel-body              { padding: 16px; }
+    .panel-actions           { width: 100%; }
+    .filter-select           { width: 100%; }
+
+    /* ── Admin dashboard ── */
+    .dashboard-wrapper       { padding: 90px 16px 40px; }
+    .dashboard-stats-grid    { grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stat-card               { padding: 16px; gap: 12px; }
+    .stat-icon               { font-size: 1.8rem; }
+    .stat-value              { font-size: 1.6rem; }
+    .stat-label              { font-size: 0.75rem; }
+    .reports-grid            { grid-template-columns: 1fr; }
+
+    /* ── Billing & Expense form ── */
+    .form-grid               { grid-template-columns: 1fr !important; }
+    .billing-expense-container { padding: 16px !important; }
+    .calc-display            { grid-template-columns: 1fr; }
+    .calc-item .calc-value   { font-size: 18px; }
+    .stats-grid              { grid-template-columns: 1fr 1fr !important; }
+    .data-table              { font-size: 12px; }
+    .data-table th,
+    .data-table td           { padding: 8px 6px; }
+    .expense-action-buttons  { flex-direction: column; gap: 6px; }
+
+    /* ── Billing expense header buttons ── */
+    .section-header          { flex-direction: column !important; align-items: flex-start !important; gap: 16px !important; }
+    .be-quick-actions        { width: 100%; }
+    .btn-logout-quick,
+    .btn-home-quick          { width: 100%; justify-content: center; }
+
+    /* ── Tabs in billing ── */
+    .tabs                    { flex-direction: column; gap: 4px; }
+    .tab                     { text-align: center; border-radius: 4px; padding: 12px; }
+
+    /* ── Modal ── */
+    .modal-content           { width: 95vw; max-height: 92vh; }
+    .modal-content.large-modal { max-width: 95vw; }
+    .modal-header            { padding: 16px; }
+    .modal-content .rmc-form { padding: 16px; }
+
+    /* ── Order detail ── */
+    .order-item-row          { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .order-actions           { flex-direction: column; }
+    .order-actions .btn-gold,
+    .order-actions .btn-outline { width: 100%; }
+
+    /* ── RMC Portal order form row ── */
+    .form-row                { grid-template-columns: 1fr; }
+
+    /* ── Login ── */
+    .login-box               { padding: 28px 20px; }
+    .login-card              { padding: 28px 20px; }
+}
+
+/* ============================================================
+   MOBILE PORTRAIT  ≤ 576px
+   ============================================================ */
+@media (max-width: 576px) {
+
+    /* ── Global ── */
+    html                     { font-size: 15px; }
+    .section-container       { padding: 44px 14px; }
+
+    /* ── Hero ── */
+    .hero-title              { font-size: 1.9rem; letter-spacing: 1px; }
+    .hero-tagline            { font-size: 0.88rem; line-height: 1.7; }
+    .hero-badge              { letter-spacing: 2px; font-size: 0.65rem; }
+    .hero-logo-container img { height: 130px !important; }
+
+    /* ── Stats ── */
+    .stats-grid              { grid-template-columns: 1fr !important; }
+    .dashboard-stats-grid    { grid-template-columns: 1fr; }
+
+    /* ── RMC Hero ── */
+    .rmc-hero-title          { font-size: 1.7rem; }
+    .rmc-hero-badge          { font-size: 9px; padding: 4px 10px; letter-spacing: 2px; }
+
+    /* ── RMC tabs — scrollable row ── */
+    .rmc-tabs                { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; gap: 6px; }
+    .rmc-tab                 { flex-shrink: 0; font-size: 0.72rem; padding: 8px 10px; }
+
+    /* ── Table — horizontal scroll container ── */
+    .data-table-wrap,
+    div[style*="overflow-x:auto"] { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .data-table              { min-width: 540px; }
+
+    /* ── Expense form ── */
+    .expense-form-section    { padding: 16px; }
+    .expense-form-section h3 { font-size: 13px; }
+    .btn-primary             { width: 100%; }
+    .btn-export              { width: 100%; text-align: center; }
+
+    /* ── Plant / project cards ── */
+    .plant-card              { padding: 18px; }
+    .plant-name              { font-size: 1.3rem; }
+
+    /* ── Footer ── */
+    .footer-socials          { gap: 12px; }
+
+    /* ── Billing & expense table buttons ── */
+    .action-buttons          { flex-direction: column; gap: 4px; }
+    .btn-small               { font-size: 11px; padding: 5px 8px; }
+
+    /* ── Report cards ── */
+    .report-card             { padding: 18px; }
+
+    /* ── Section header with logout buttons ── */
+    .be-quick-actions        { flex-direction: column; }
+    .btn-logout-quick,
+    .btn-home-quick          { font-size: 12px; padding: 9px 14px; }
+
+    /* ── RMC hero stats row on tiny screens ── */
+    .rmc-hero-stats          { gap: 8px; }
+
+    /* ── Auth forms ── */
+    .login-container         { padding: 12px; }
+    .login-box               { padding: 22px 14px; }
+}
+
+/* ============================================================
+   VERY SMALL SCREENS  ≤ 360px
+   ============================================================ */
+@media (max-width: 360px) {
+
+    html                     { font-size: 14px; }
+    .hero-title              { font-size: 1.6rem; }
+    .section-title           { font-size: 1.5rem; }
+    .rmc-hero-title          { font-size: 1.5rem; }
+    .nav-container           { padding: 10px 12px; }
+    .brand-logo-img          { height: 40px; }
+    .section-container       { padding: 36px 12px; }
+    .rmc-tab                 { font-size: 0.68rem; padding: 7px 8px; }
+    .data-table              { min-width: 480px; }
+}
+
+/* ============================================================
+   TOUCH IMPROVEMENTS (all mobile)
+   ============================================================ */
+@media (hover: none) {
+    /* Remove hover transforms on touch devices */
+    .plant-card:hover,
+    .project-card:hover,
+    .btn-gold:hover,
+    .btn-outline:hover       { transform: none; }
+    .founder-img-wrapper:hover .founder-img { transform: none; }
+
+    /* Bigger tap areas for table action buttons */
+    .btn-small               { padding: 8px 12px; font-size: 12px; }
+    .btn-pdf, .btn-xls, .btn-del { padding: 8px 12px; font-size: 12px; }
+}
+
+/* ============================================================
+   PRINT  (clean PDFs from the browser print dialog)
+   ============================================================ */
+@media print {
+    .luxury-header, .mobile-nav-drawer,
+    .mobile-menu-btn, .tabs,
+    .btn-primary, .btn-gold, .btn-export,
+    .action-buttons, .expense-action-buttons { display: none !important; }
+    body                     { background: #fff; color: #000; }
+    .billing-expense-container { padding: 0 !important; }
+    .data-table th           { background: #eee !important; color: #000 !important; }
+}

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RS &amp; CO | Client Portal</title>
+    <meta name="description" content="RS &amp; CO Client Portal — Place RMC orders, track deliveries, manage invoices.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/rmc.css">
+    <link rel="stylesheet" href="/static/css/responsive.css">
+    <style>
+        /* ── Portal Hero ─────────────────────────────────────── */
+        .portal-hero {
+            position: relative; width: 100%; min-height: 52vh;
+            display: flex; align-items: flex-end;
+            overflow: hidden;
+        }
+        .portal-hero-bg {
+            position: absolute; inset: 0;
+            background: url('/static/images/rmc_plant_trucks.jpg') center/cover no-repeat;
+            animation: heroZoom 20s ease-in-out infinite alternate;
+        }
+        @keyframes heroZoom { from{transform:scale(1.02)} to{transform:scale(1.08)} }
+        .portal-hero-overlay {
+            position: absolute; inset: 0;
+            background: linear-gradient(to bottom,
+                rgba(0,0,0,.5) 0%,
+                rgba(0,0,0,.3) 40%,
+                rgba(10,10,10,.96) 100%);
+        }
+        .portal-hero-content {
+            position: relative; z-index: 2;
+            padding: 0 40px 44px; width: 100%;
+        }
+        .portal-welcome-badge {
+            display: inline-block; font-size: 10px; font-weight: 700;
+            letter-spacing: 3px; color: #D4AF37; text-transform: uppercase;
+            border: 1px solid #D4AF37; padding: 4px 12px; border-radius: 3px;
+            margin-bottom: 14px;
+        }
+        .portal-hero-title {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(1.8rem, 4vw, 3rem); color: #fff; font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .portal-hero-title span { color: #D4AF37; }
+        .portal-hero-sub { color: rgba(255,255,255,.6); font-size: 14px; margin-bottom: 24px; }
+        .portal-hero-stats {
+            display: flex; gap: 20px; flex-wrap: wrap;
+        }
+        .portal-stat-chip {
+            background: rgba(212,175,55,.12);
+            border: 1px solid rgba(212,175,55,.3);
+            border-radius: 8px; padding: 12px 22px;
+            backdrop-filter: blur(6px); text-align: center;
+        }
+        .portal-stat-chip .psv {
+            display: block; font-size: 22px; font-weight: 700; color: #D4AF37;
+        }
+        .portal-stat-chip .psl {
+            font-size: 10px; color: rgba(255,255,255,.5);
+            text-transform: uppercase; letter-spacing: 1.5px;
+        }
+
+        /* ── Account Card ────────────────────────────────────── */
+        .account-card {
+            background: #111;
+            border: 1px solid rgba(212,175,55,.2);
+            border-radius: 10px; padding: 28px;
+        }
+        .account-avatar {
+            width: 72px; height: 72px; border-radius: 50%;
+            background: linear-gradient(135deg,#D4AF37,#af9063);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 28px; font-weight: 700; color: #1a1a1a;
+            margin-bottom: 16px; flex-shrink: 0;
+        }
+        .account-row { display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+        .account-info { flex: 1; min-width: 200px; }
+        .account-name {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.5rem; color: #fff; margin-bottom: 4px;
+        }
+        .account-role-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 20px;
+            font-size: 11px; font-weight: 700; letter-spacing: 1px;
+            text-transform: uppercase; background: rgba(212,175,55,.15);
+            color: #D4AF37; border: 1px solid rgba(212,175,55,.3);
+            margin-bottom: 14px;
+        }
+        .account-field { margin-bottom: 10px; }
+        .account-field .af-label {
+            font-size: 10px; color: #666; text-transform: uppercase;
+            letter-spacing: 1px; margin-bottom: 2px;
+        }
+        .account-field .af-val { font-size: 14px; color: #ccc; }
+
+        /* ── Quick actions strip ─────────────────────────────── */
+        .quick-strip {
+            display: flex; gap: 12px; flex-wrap: wrap;
+            padding: 20px 40px;
+            background: rgba(212,175,55,.04);
+            border-bottom: 1px solid rgba(212,175,55,.12);
+        }
+        .quick-btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 18px; border-radius: 6px;
+            font-size: 13px; font-weight: 600;
+            cursor: pointer; text-decoration: none; transition: all .2s;
+            white-space: nowrap;
+        }
+        .quick-btn.gold { background: #D4AF37; color: #1a1a1a; border: none; }
+        .quick-btn.gold:hover { background: #e5c158; transform: translateY(-1px); }
+        .quick-btn.outline {
+            background: transparent; color: #D4AF37;
+            border: 1px solid rgba(212,175,55,.4);
+        }
+        .quick-btn.outline:hover { background: rgba(212,175,55,.1); }
+        .quick-btn.danger { background: transparent; color: #ff6b7a; border: 1px solid rgba(220,53,69,.4); }
+        .quick-btn.danger:hover { background: rgba(220,53,69,.1); }
+
+        @media (max-width: 768px) {
+            .portal-hero-content { padding: 0 16px 28px; }
+            .portal-hero-stats   { flex-direction: column; gap: 8px; }
+            .portal-stat-chip    { display: flex; justify-content: space-between; text-align: left; }
+            .portal-stat-chip .psv { font-size: 18px; }
+            .quick-strip         { padding: 14px 16px; gap: 8px; }
+            .quick-btn           { font-size: 12px; padding: 9px 14px; }
+            .account-card        { padding: 18px; }
+        }
+        @media (max-width: 480px) {
+            .quick-strip         { flex-direction: column; }
+            .quick-btn           { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="luxury-header">
+        <div class="nav-container">
+            <a href="/" class="brand-logo">
+                <img class="brand-logo-img logo-img-blend" src="/static/images/logo.png" alt="RS&CO Logo">
+                <div class="brand-logo-text">
+                    <span class="brand-name">R SUNDARAM &amp; CO</span>
+                    <span class="brand-tagline">Strong Roads Build To LAST</span>
+                </div>
+            </a>
+            <nav class="desktop-nav">
+                <a href="/" class="nav-link">Main Website</a>
+                <span class="nav-link" id="user-welcome">Welcome, <strong id="user-name" style="color:#D4AF37;">Client</strong></span>
+                <a href="/logout" class="btn-gold nav-cta" style="background:#dc3545;color:#fff;">&#128274; Logout</a>
+            </nav>
+            <button class="mobile-menu-btn" aria-label="Menu">
+                <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Mobile Drawer -->
+    <div class="mobile-nav-drawer">
+        <a href="/" class="mobile-nav-link">&#127968; Main Website</a>
+        <a href="/logout" class="mobile-nav-link" style="color:#ff6b7a;">&#128274; Logout</a>
+    </div>
+
+    <main>
+        <!-- Hero Banner -->
+        <section class="portal-hero">
+            <div class="portal-hero-bg"></div>
+            <div class="portal-hero-overlay"></div>
+            <div class="portal-hero-content">
+                <div class="portal-welcome-badge">Client Portal</div>
+                <h1 class="portal-hero-title">Hello, <span id="hero-user-name">there</span> 👋</h1>
+                <p class="portal-hero-sub">R SUNDARAM &amp; CO &nbsp;•&nbsp; Ready-Mix Concrete Services</p>
+                <div class="portal-hero-stats">
+                    <div class="portal-stat-chip">
+                        <span class="psv" id="stat-my-orders">–</span>
+                        <span class="psl">My Orders</span>
+                    </div>
+                    <div class="portal-stat-chip">
+                        <span class="psv" id="stat-my-invoices">–</span>
+                        <span class="psl">Invoices</span>
+                    </div>
+                    <div class="portal-stat-chip">
+                        <span class="psv" id="stat-my-spent">–</span>
+                        <span class="psl">Total Value</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Action Strip -->
+        <div class="quick-strip">
+            <button class="quick-btn gold" onclick="switchTab('new-order')">&#43; Place New Order</button>
+            <button class="quick-btn outline" onclick="switchTab('orders')">&#128203; My Orders</button>
+            <button class="quick-btn outline" onclick="switchTab('invoices')">&#128196; Invoices</button>
+            <button class="quick-btn outline" onclick="switchTab('account')">&#128100; My Account</button>
+            <a href="/logout" class="quick-btn danger" style="margin-left:auto;">&#128274; Logout</a>
+        </div>
+
+        <!-- Tabs -->
+        <section class="rmc-tabs-section">
+            <div class="section-container" style="padding-top:20px;padding-bottom:20px;">
+                <div class="rmc-tabs">
+                    <button class="rmc-tab active" data-tab="orders">My Orders</button>
+                    <button class="rmc-tab" data-tab="new-order">+ New Order</button>
+                    <button class="rmc-tab" data-tab="account">My Account</button>
+                    <button class="rmc-tab" data-tab="invoices">Invoices</button>
+                    <button class="rmc-tab" data-tab="payments">Payments</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Orders Tab -->
+        <section id="orders-tab" class="rmc-tab-content active">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header">
+                        <h2>Order History</h2>
+                        <button class="btn-gold" onclick="switchTab('new-order')">+ New Order</button>
+                    </div>
+                    <div class="panel-body">
+                        <div id="orders-list" class="rmc-list">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- New Order Tab -->
+        <section id="new-order-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header"><h2>Place New Order</h2></div>
+                    <div class="panel-body">
+                        <form id="new-order-form" class="rmc-form">
+                            <div class="form-group">
+                                <label>Your Name or Company Name</label>
+                                <input type="text" id="order-customer-name" placeholder="Enter your name or company" required>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Delivery Date</label>
+                                    <input type="date" id="order-delivery-date" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Phone Number</label>
+                                    <input type="tel" id="order-phone" placeholder="Enter phone number" required>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Delivery Address</label>
+                                <input type="text" id="order-delivery-address" placeholder="Enter delivery site address" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Order Items</label>
+                                <div id="order-items-container">
+                                    <div class="order-item-row">
+                                        <select class="item-grade" required>
+                                            <option value="">Select grade…</option>
+                                        </select>
+                                        <input type="number" class="item-quantity" placeholder="Qty (m³)" min="1" step="0.5" required>
+                                        <input type="text" class="item-subtotal" placeholder="Subtotal" readonly>
+                                        <button type="button" class="btn-remove-item" onclick="removeOrderItem(this)">×</button>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn-outline" onclick="addOrderItem()" style="margin-top:10px;">+ Add Item</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Notes / Special Instructions</label>
+                                <textarea id="order-notes" rows="3" placeholder="Any special delivery requirements…"></textarea>
+                            </div>
+                            <div class="order-summary">
+                                <div class="summary-row">
+                                    <span>Estimated Total:</span>
+                                    <span id="order-total">₹0.00</span>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn-gold btn-block" style="margin-top:16px;">Submit Order</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Account Tab -->
+        <section id="account-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header"><h2>My Account</h2></div>
+                    <div class="panel-body">
+                        <div id="account-details">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Invoices Tab -->
+        <section id="invoices-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header">
+                        <h2>My Invoices</h2>
+                        <button class="btn-outline" onclick="exportInvoices()">Export Excel</button>
+                    </div>
+                    <div class="panel-body">
+                        <div id="invoices-list" class="rmc-list"><div class="loading-spinner"></div></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Payments Tab -->
+        <section id="payments-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header">
+                        <h2>Payment Records</h2>
+                        <button class="btn-outline" onclick="exportPayments()">Export Excel</button>
+                    </div>
+                    <div class="panel-body">
+                        <div id="payments-list" class="rmc-list"><div class="loading-spinner"></div></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="toast" class="toast-notification hidden"></div>
+
+    <script src="/static/js/rmc_portal.js"></script>
+    <script>
+        // ── Load user info from session & render account card ──────────
+        (async () => {
+            try {
+                const res  = await fetch('/api/auth/me');
+                const data = await res.json();
+                if (!data.user) { window.location.href = '/login'; return; }
+
+                const u = data.user;
+                // Navbar
+                document.getElementById('user-name').textContent = u.full_name || u.username;
+                // Hero
+                document.getElementById('hero-user-name').textContent = (u.full_name || u.username).split(' ')[0];
+
+                // Account Tab content
+                const initials = (u.full_name || u.username || 'CL')
+                    .split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+
+                document.getElementById('account-details').innerHTML = `
+                    <div class="account-card">
+                        <div class="account-row">
+                            <div class="account-avatar">${initials}</div>
+                            <div class="account-info">
+                                <div class="account-name">${u.full_name || u.username}</div>
+                                <span class="account-role-badge">${u.role || 'Client'}</span>
+                                <div class="account-field">
+                                    <div class="af-label">Username</div>
+                                    <div class="af-val">@${u.username}</div>
+                                </div>
+                                <div class="account-field">
+                                    <div class="af-label">Email Address</div>
+                                    <div class="af-val">${u.email || '—'}</div>
+                                </div>
+                                <div class="account-field">
+                                    <div class="af-label">Phone</div>
+                                    <div class="af-val">${u.phone || '—'}</div>
+                                </div>
+                                <div class="account-field">
+                                    <div class="af-label">Account Created</div>
+                                    <div class="af-val">${u.created_at ? new Date(u.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}) : '—'}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="margin-top:24px;padding-top:20px;border-top:1px solid rgba(255,255,255,.06);display:flex;gap:12px;flex-wrap:wrap;">
+                            <a href="/logout" style="display:inline-flex;align-items:center;gap:6px;padding:10px 20px;background:#dc3545;color:#fff;border-radius:6px;font-size:13px;font-weight:700;text-decoration:none;">&#128274; Logout</a>
+                            <a href="/" style="display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border:1px solid rgba(212,175,55,.4);color:#D4AF37;border-radius:6px;font-size:13px;font-weight:700;text-decoration:none;">&#127968; Main Website</a>
+                        </div>
+                    </div>
+                `;
+            } catch(e) {
+                console.error(e);
+            }
+        })();
+
+        // ── Mobile nav ──────────────────────────────────────────────────
+        document.querySelector('.mobile-menu-btn')?.addEventListener('click', () => {
+            document.querySelector('.mobile-nav-drawer')?.classList.toggle('open');
+        });
+
+        // ── switchTab helper (portal JS may also define this) ──────────
+        function switchTab(tab) {
+            document.querySelectorAll('.rmc-tab').forEach(b => {
+                b.classList.toggle('active', b.dataset.tab === tab);
+            });
+            document.querySelectorAll('.rmc-tab-content').forEach(s => {
+                s.classList.toggle('active', s.id === tab + '-tab');
+            });
+        }
+    </script>
+</body>
+</html>

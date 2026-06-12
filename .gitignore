@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Database (local only — Render uses persistent disk)
+# data/db.json   <-- kept so seed data deploys with the app
+
+# Temp media uploads stored locally only
+.tempmediaStorage/
+
+# Large video files (too big for git, host on CDN if needed)
+static/videos/*.MP4
+static/videos/*.mp4
+static/videos/*.mov
+static/videos/*.MOV

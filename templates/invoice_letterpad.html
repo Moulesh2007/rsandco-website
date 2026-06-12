@@ -1,0 +1,459 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice - R SUNDARAM & CO</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap');
+        
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Outfit', 'Montserrat', sans-serif;
+            background: #111111;
+            padding: 40px 20px;
+            color: #333;
+        }
+        
+        .invoice-container {
+            max-width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #e5c158;
+        }
+        
+        /* Top Accent Banner */
+        .top-accent-bar {
+            height: 15px;
+            background: linear-gradient(90deg, #b8962e 0%, #d4af37 50%, #f5d76e 100%);
+        }
+
+        /* Top Logo Banner Section */
+        .brand-header-banner {
+            background: #d4af37;
+            padding: 15px 40px;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+        }
+        
+        .brand-logo-container {
+            background: #000;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+
+        .brand-logo-container img {
+            height: 52px;
+            object-fit: contain;
+        }
+
+        /* Proprietor & Header details */
+        .invoice-header {
+            background: #fff;
+            padding: 25px 40px 15px 40px;
+            border-bottom: 2px solid #f2f2f2;
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        
+        .company-info {
+            color: #d4af37;
+            max-width: 55%;
+        }
+        
+        .company-name {
+            font-size: 28px;
+            font-weight: 800;
+            color: #d4af37;
+            line-height: 1.1;
+            letter-spacing: 0.5px;
+        }
+        
+        .company-slogan {
+            font-size: 10px;
+            font-weight: 700;
+            color: #333;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-top: 5px;
+            margin-bottom: 3px;
+        }
+        
+        .company-tagline {
+            font-size: 11px;
+            font-weight: 500;
+            color: #666;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        
+        .proprietor-section {
+            text-align: left;
+            color: #333;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+        
+        .proprietor-title {
+            font-size: 10px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+        }
+        
+        .proprietor-name {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #111;
+        }
+        
+        .proprietor-details div {
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        /* Invoice body */
+        .invoice-body {
+            padding: 30px 40px;
+            position: relative;
+            flex-grow: 1;
+        }
+        
+        /* Watermark */
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            opacity: 0.02;
+            width: 320px;
+            height: 320px;
+            pointer-events: none;
+        }
+        
+        .watermark img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        /* Invoice title */
+        .invoice-title {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .invoice-title h1 {
+            font-size: 28px;
+            font-weight: 800;
+            color: #d4af37;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        /* Invoice details grid */
+        .invoice-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 25px;
+        }
+        
+        .detail-section {
+            background: #fff;
+        }
+        
+        .detail-section h3 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #111;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        .detail-row {
+            display: flex;
+            margin-bottom: 8px;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        
+        .detail-label {
+            font-weight: 700;
+            color: #111;
+            width: 90px;
+            flex-shrink: 0;
+        }
+        
+        .detail-value {
+            color: #555;
+            flex-grow: 1;
+        }
+        
+        /* Delivery details table */
+        .delivery-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+        }
+        
+        .delivery-table th {
+            background: #d4af37;
+            color: #fff;
+            font-weight: 700;
+            font-size: 11px;
+            padding: 10px 15px;
+            text-align: left;
+            text-transform: uppercase;
+        }
+        
+        .delivery-table td {
+            padding: 10px 15px;
+            border-bottom: 1px solid #f2f2f2;
+            font-size: 11px;
+            color: #333;
+        }
+        
+        .delivery-table tr:nth-child(even) {
+            background: #fafafa;
+        }
+        
+        /* Amount summary */
+        .amount-summary {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .summary-box {
+            width: 280px;
+        }
+        
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #333;
+        }
+        
+        .summary-row.total {
+            border-top: 1px solid #d4af37;
+            padding-top: 8px;
+            margin-top: 8px;
+            font-weight: 700;
+            font-size: 13px;
+            color: #d4af37;
+        }
+        
+        /* Footer */
+        .invoice-footer {
+            border-top: 1px solid #f2f2f2;
+            padding: 20px 40px;
+            text-align: center;
+        }
+        
+        .footer-text {
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: #888;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .invoice-container {
+                box-shadow: none;
+                max-width: none;
+                border: none;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="/static/css/responsive.css">
+</head>
+<body>
+    <div class="invoice-container">
+        <!-- Top accent banner -->
+        <div class="top-accent-bar"></div>
+        
+        <!-- Brand Header Logo Banner -->
+        <div class="brand-header-banner">
+            <div class="brand-logo-container">
+                <img src="/static/images/logo.png" alt="RS & CO Logo">
+            </div>
+        </div>
+
+        <!-- Header -->
+        <div class="invoice-header">
+            <div class="header-content">
+                <div class="company-info">
+                    <div class="company-name">R SUNDARAM & CO</div>
+                    <div class="company-slogan">STRONG ROADS • BUILD TO LAST</div>
+                    <div class="company-tagline">READYMIX CONCRETE</div>
+                </div>
+                <div class="proprietor-section">
+                    <div class="proprietor-title">Proprietor</div>
+                    <div class="proprietor-name">S MAGHESH</div>
+                    <div class="proprietor-details">
+                        <div>■ 9940270304</div>
+                        <div>■ rsundaram&co@gmail.com</div>
+                        <div>■ Quarry Rd, Tiruneermalai</div>
+                        <div>Chennai, Tamil Nadu 600132</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div>
+        
+        <!-- Body -->
+        <div class="invoice-body">
+            <!-- Watermark -->
+            <div class="watermark">
+                <img src="/static/images/logo.png" alt="Watermark">
+            </div>
+            
+            <!-- Invoice Title -->
+            <div class="invoice-title">
+                <h1>Delivery Challan</h1>
+            </div>
+            
+            <!-- Invoice Details -->
+            <div class="invoice-details">
+                <div class="detail-section">
+                    <h3>Bill To</h3>
+                    <div class="detail-row">
+                        <span class="detail-label">Company:</span>
+                        <span class="detail-value" id="bill-company">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Phone:</span>
+                        <span class="detail-value" id="bill-phone">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Address:</span>
+                        <span class="detail-value" id="bill-address">-</span>
+                    </div>
+                </div>
+                <div class="detail-section">
+                    <h3>Challan Details</h3>
+                    <div class="detail-row">
+                        <span class="detail-label">Challan No:</span>
+                        <span class="detail-value" id="challan-no">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Date:</span>
+                        <span class="detail-value" id="challan-date">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Time:</span>
+                        <span class="detail-value" id="challan-time">-</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Delivery Details Table -->
+            <table class="delivery-table">
+                <thead>
+                    <tr>
+                        <th>Field</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Vehicle Number</td>
+                        <td id="vehicle-no">-</td>
+                    </tr>
+                    <tr>
+                        <td>Driver Name</td>
+                        <td id="driver-name">-</td>
+                    </tr>
+                    <tr>
+                        <td>Grade</td>
+                        <td id="grade">-</td>
+                    </tr>
+                    <tr>
+                        <td>Quantity (m³)</td>
+                        <td id="quantity">-</td>
+                    </tr>
+                    <tr>
+                        <td>Rate per m³</td>
+                        <td id="rate">-</td>
+                    </tr>
+                    <tr>
+                        <td>Loading Time</td>
+                        <td id="loading-time">-</td>
+                    </tr>
+                    <tr>
+                        <td>Unloading Time</td>
+                        <td id="unloading-time">-</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <!-- Amount Summary -->
+            <div class="amount-summary">
+                <div class="summary-box">
+                    <div class="summary-row">
+                        <span>Total Amount:</span>
+                        <span id="total-amount">₹0.00</span>
+                    </div>
+                    <div class="summary-row">
+                        <span>Advance Given:</span>
+                        <span id="advance-amount">₹0.00</span>
+                    </div>
+                    <div class="summary-row total">
+                        <span>Balance Amount:</span>
+                        <span id="balance-amount">₹0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="invoice-footer">
+            <div class="footer-text">R SUNDARAM & CO • READYMIX CONCRETE</div>
+            <div class="footer-divider"></div>
+            <div class="footer-text">Strong Roads • Build To Last</div>
+        </div>
+    </div>
+    
+    <script>
+        // This will be populated dynamically when generating the invoice
+        // For now, it's a template for display
+    </script>
+</body>
+</html>
+

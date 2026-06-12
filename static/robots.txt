@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+Disallow: /api/
+Disallow: /rmc-portal/
+Disallow: /rmc-admin/
+Disallow: /login/
+Disallow: /register/
+
+Sitemap: https://rsandco.com/sitemap.xml

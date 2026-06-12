@@ -1,0 +1,111 @@
+﻿<!-- templates/admin.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RS & CO | Corporate Portal & Dashboard</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <!-- Supabase JS Client SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="/static/css/responsive.css">
+</head>
+<body>
+
+    <!-- Header / Nav -->
+    <header class="luxury-header">
+        <div class="nav-container">
+            <a href="/" class="brand-logo">
+                <img class="brand-logo-img logo-img-blend" src="/static/images/logo.png" alt="RS&CO Logo">
+                <div style="display:flex; flex-direction:column; justify-content:center;">
+                    <span style="font-family:var(--font-heading); font-size:1.1rem; font-weight:700; color:var(--text-white); letter-spacing:1px; line-height:1;">RS&CO</span>
+                    <span style="font-family:var(--font-body); font-size:0.5rem; letter-spacing:1.5px; color:var(--gold); margin-top:2px; text-transform:uppercase;">ADMIN CONSOLE</span>
+                </div>
+            </a>
+            <nav class="desktop-nav">
+                <a href="/" class="nav-link">Main Website</a>
+                <button id="logout-btn" class="btn-outline hidden">Logout</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Login Box (Shown when not authenticated) -->
+    <div id="login-container" class="login-wrapper">
+        <div class="login-card">
+            <h2 class="login-title">Secure Portal Access</h2>
+            <p class="login-desc">Enter your administrative credentials to manage facilities and project parameters.</p>
+            
+            <form id="login-form">
+                <div class="form-group">
+                    <input type="email" id="login-email" required placeholder=" ">
+                    <label for="login-email">Email Address</label>
+                </div>
+                <div class="form-group">
+                    <input type="password" id="login-password" required placeholder=" ">
+                    <label for="login-password">Security Password</label>
+                </div>
+                <button type="submit" class="btn-gold btn-block" id="login-submit">
+                    <span class="btn-text">Authenticate Credentials</span>
+                    <span class="btn-spinner hidden"></span>
+                </button>
+                <div id="login-feedback" class="form-feedback hidden"></div>
+            </form>
+
+            <div class="demo-bypass-box">
+                <p>Or bypass to preview changes using the mock storage database mode:</p>
+                <button id="bypass-btn" class="btn-outline btn-block">Enter in Demo/Mock Mode</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Container (Shown when authenticated / bypass is active) -->
+    <div id="dashboard-container" class="dashboard-wrapper hidden">
+        <div class="dashboard-header-row">
+            <div>
+                <span class="gold-subtitle">Administrative Operations</span>
+                <h1 class="dashboard-title">System Console</h1>
+            </div>
+            <div class="mode-badge" id="database-mode">Local Mock Mode</div>
+        </div>
+
+        <!-- System Grid -->
+        <div class="dashboard-grid">
+            
+            <!-- Plants Panel -->
+            <div class="dashboard-panel">
+                <div class="panel-header">
+                    <h2>Plant Facility Operations</h2>
+                </div>
+                <div class="panel-body" id="admin-plants-list">
+                    <!-- Loaded dynamically -->
+                    <div class="loading-spinner"></div>
+                </div>
+            </div>
+
+            <!-- Projects Panel -->
+            <div class="dashboard-panel">
+                <div class="panel-header">
+                    <h2>Project Portfolio Tracking</h2>
+                </div>
+                <div class="panel-body" id="admin-projects-list">
+                    <!-- Loaded dynamically -->
+                    <div class="loading-spinner"></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Alert Toast -->
+    <div id="toast" class="toast-notification hidden"></div>
+
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>
+
