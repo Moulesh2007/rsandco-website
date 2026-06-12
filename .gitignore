@@ -55,3 +55,5 @@ static/videos/*.MP4
 static/videos/*.mp4
 static/videos/*.mov
 static/videos/*.MOV
+
+.vercel

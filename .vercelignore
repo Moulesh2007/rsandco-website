@@ -1,0 +1,11 @@
+venv/
+env/
+ENV/
+.venv/
+__pycache__/
+*.pyc
+.git/
+.vscode/
+data/
+*.db
+static/videos/
