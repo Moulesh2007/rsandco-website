@@ -331,3 +331,74 @@ insert into rmc_users (username, email, password_hash, full_name, role, phone)
 values
 ('admin', 'admin@rsandco.com', 'admin123', 'System Administrator', 'admin', '+91 98765 43211'),
 ('manager', 'manager@rsandco.com', 'manager123', 'Operations Manager', 'manager', '+91 98765 43212');
+
+-- Manual Billing
+create table if not exists manual_billing (
+    id text primary key,
+    company_name text,
+    phone text,
+    address text,
+    date text,
+    time text,
+    vehicle_number text,
+    driver_name text,
+    unloading_time text,
+    grade text,
+    cubic_meters text,
+    loading_time text,
+    rate_per_cubic text,
+    total_amount numeric default 0,
+    advance_amount numeric default 0,
+    balance_amount numeric default 0,
+    created_at text,
+    created_by text
+);
+
+-- Expenses
+create table if not exists expenses (
+    id text primary key,
+    category text,
+    date text,
+    description text,
+    material_type text,
+    quantity text,
+    rate_per_ton text,
+    amount numeric default 0,
+    total_amount numeric default 0,
+    advance_amount numeric default 0,
+    balance_amount numeric default 0,
+    created_at text,
+    created_by text
+);
+
+alter table manual_billing enable row level security;
+alter table expenses enable row level security;
+
+create policy "Allow full access to manual_billing" on manual_billing for all using (true);
+create policy "Allow full access to expenses" on expenses for all using (true);
+
+
+-- Fix RLS Policies for Python Backend (Anon Role)
+drop policy if exists "Admin full access to concrete grades" on rmc_concrete_grades;
+drop policy if exists "Admin full access to clients" on rmc_clients;
+drop policy if exists "Admin full access to orders" on rmc_orders;
+drop policy if exists "Admin full access to order items" on rmc_order_items;
+drop policy if exists "Admin full access to invoices" on rmc_invoices;
+drop policy if exists "Admin full access to payments" on rmc_payment_records;
+drop policy if exists "Allow admin write access to plants" on plants;
+drop policy if exists "Allow admin write access to projects" on projects;
+drop policy if exists "Allow admin write access to founder_ceo" on founder_ceo;
+drop policy if exists "Admins can view all users" on rmc_users;
+drop policy if exists "Admins can insert users" on rmc_users;
+drop policy if exists "Admins can update users" on rmc_users;
+
+create policy "Allow all to clients" on rmc_clients for all using (true);
+create policy "Allow all to orders" on rmc_orders for all using (true);
+create policy "Allow all to order_items" on rmc_order_items for all using (true);
+create policy "Allow all to invoices" on rmc_invoices for all using (true);
+create policy "Allow all to payments" on rmc_payment_records for all using (true);
+create policy "Allow all to users" on rmc_users for all using (true);
+create policy "Allow all to projects" on projects for all using (true);
+create policy "Allow all to plants" on plants for all using (true);
+create policy "Allow all to founder_ceo" on founder_ceo for all using (true);
+

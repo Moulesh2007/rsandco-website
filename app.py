@@ -415,12 +415,8 @@ def billing_expense():
     if 'username' not in session:
         return redirect(url_for('login'))
     
-    # Check user role from mock database
-    user_role = None
-    for user in MOCK_DATABASE.get('rmc_users', []):
-        if user['username'] == session.get('username'):
-            user_role = user['role']
-            break
+    # Check user role from session
+    user_role = session.get('role')
     
     if user_role not in ['admin', 'manager']:
         return jsonify({"error": "Access denied. Admin or Manager role required."}), 403
@@ -564,7 +560,7 @@ def api_register():
             return jsonify({"error": "Username or email already exists"}), 400
     
     new_user = {
-        "id": f"user-{len(users) + 3}",
+        "id": f"user-{uuid.uuid4().hex[:8]}",
         "username": username,
         "email": email,
         "password_hash": generate_password_hash(password),
@@ -829,7 +825,7 @@ def rmc_clients():
         
         # Mock insert
         new_client = {
-            "id": f"client-{len(MOCK_DATABASE['rmc_clients']) + 1}",
+            "id": f"client-{uuid.uuid4().hex[:8]}",
             **data,
             "current_balance": 0.00,
             "is_active": True
@@ -890,7 +886,7 @@ def rmc_orders():
         for item in data['items']:
             total_amount += item.get('subtotal', 0)
         
-        order_number = f"RMC-{datetime.now().strftime('%Y%m%d')}-{len(MOCK_DATABASE['rmc_orders']) + 1:04d}"
+        order_number = f"RMC-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
         
         if SUPABASE_CLIENT:
             try:
@@ -925,7 +921,7 @@ def rmc_orders():
         
         # Mock insert
         new_order = {
-            "id": f"order-{len(MOCK_DATABASE['rmc_orders']) + 1}",
+            "id": f"order-{uuid.uuid4().hex[:8]}",
             "order_number": order_number,
             "user_id": user_id,
             "customer_name": data['customer_name'],
@@ -985,7 +981,7 @@ def approve_order(order_id):
                 break
     
     # Generate invoice automatically
-    invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{len(MOCK_DATABASE.get('rmc_invoices', [])) + 1:04d}"
+    invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
     
     if SUPABASE_CLIENT:
         try:
@@ -1007,7 +1003,7 @@ def approve_order(order_id):
     else:
         # Mock invoice creation
         new_invoice = {
-            "id": f"invoice-{len(MOCK_DATABASE.get('rmc_invoices', [])) + 1}",
+            "id": f"invoice-{uuid.uuid4().hex[:8]}",
             "invoice_number": invoice_number,
             "order_id": order_id,
             "invoice_date": datetime.now().date().isoformat(),
@@ -1081,7 +1077,7 @@ def rmc_invoices():
         if not data.get('order_id') or not data.get('client_id'):
             return jsonify({"error": "Missing order_id or client_id"}), 400
         
-        invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{len(MOCK_DATABASE['rmc_invoices']) + 1:04d}"
+        invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
         due_date = (datetime.now() + timedelta(days=30)).date()
         
         if SUPABASE_CLIENT:
@@ -1104,7 +1100,7 @@ def rmc_invoices():
         
         # Mock insert
         new_invoice = {
-            "id": f"invoice-{len(MOCK_DATABASE['rmc_invoices']) + 1}",
+            "id": f"invoice-{uuid.uuid4().hex[:8]}",
             "invoice_number": invoice_number,
             "order_id": data['order_id'],
             "client_id": data['client_id'],
@@ -1144,7 +1140,7 @@ def rmc_payments():
         if not data.get('client_id') or not data.get('amount'):
             return jsonify({"error": "Missing client_id or amount"}), 400
         
-        payment_number = f"PAY-{datetime.now().strftime('%Y%m%d')}-{len(MOCK_DATABASE['rmc_payments']) + 1:04d}"
+        payment_number = f"PAY-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
         
         if SUPABASE_CLIENT:
             try:
@@ -1164,7 +1160,7 @@ def rmc_payments():
         
         # Mock insert
         new_payment = {
-            "id": f"payment-{len(MOCK_DATABASE['rmc_payments']) + 1}",
+            "id": f"payment-{uuid.uuid4().hex[:8]}",
             "payment_number": payment_number,
             "invoice_id": data.get('invoice_id'),
             "client_id": data['client_id'],
@@ -1450,7 +1446,7 @@ def manual_billing():
                 return jsonify({"error": f"Missing required field: {field}"}), 400
         
         billing_record = {
-            "id": f"bill-{len(MOCK_DATABASE.get('manual_billing', [])) + 1}",
+            "id": f"bill-{uuid.uuid4().hex[:8]}",
             "company_name": data['company_name'],
             "phone": data['phone'],
             "address": data['address'],
@@ -1868,7 +1864,7 @@ def expenses():
 
         # Build the record — capture ALL fields the frontend may send
         expense_record = {
-            "id": f"expense-{len(MOCK_DATABASE.get('expenses', [])) + 1}",
+            "id": f"expense-{uuid.uuid4().hex[:8]}",
             "category":       data.get('category', ''),
             "date":           data.get('date', ''),
             "description":    data.get('description', ''),
