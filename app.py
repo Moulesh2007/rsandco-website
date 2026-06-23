@@ -107,7 +107,7 @@ MOCK_DATABASE = {
         "name": "S Maghesh",
         "role": "Founder & Chief Executive Officer",
         "bio": "With over 25 years of pioneering leadership in infrastructure development, S Maghesh has steered RS & CO from a local paving contractor to an elite infrastructure enterprise. His engineering acumen paired with an uncompromising commitment to premium execution has redefined highway construction standards across the region.",
-        "photo_url": "/static/images/founder_ceo.jpg",
+        "photo_url": "/static/images/founder_ceo.jpg?v=3",
         "vision": "To build foundational pathways that endure for generations, fusing cutting-edge materials engineering with timeless architectural luxury and safety."
     },
     "rmc_users": [
