@@ -365,6 +365,61 @@ def register():
 def robots_txt():
     return send_from_directory('static', 'robots.txt')
 
+@app.route('/static/videos/<path:filename>')
+def serve_video(filename):
+    """Serve video files with byte-range support for mobile/Safari streaming."""
+    import os
+    from flask import Response, request as flask_request
+    video_path = os.path.join(app.static_folder, 'videos', filename)
+    if not os.path.exists(video_path):
+        return '', 404
+
+    file_size = os.path.getsize(video_path)
+    range_header = flask_request.headers.get('Range', None)
+
+    if range_header:
+        # Parse Range header: bytes=start-end
+        byte_range = range_header.replace('bytes=', '').split('-')
+        start = int(byte_range[0])
+        end = int(byte_range[1]) if byte_range[1] else file_size - 1
+        length = end - start + 1
+
+        def generate_chunk():
+            with open(video_path, 'rb') as f:
+                f.seek(start)
+                remaining = length
+                chunk_size = 65536  # 64KB chunks
+                while remaining > 0:
+                    data = f.read(min(chunk_size, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        resp = Response(
+            generate_chunk(),
+            status=206,
+            mimetype='video/mp4',
+            direct_passthrough=True
+        )
+        resp.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = length
+        resp.headers['Cache-Control'] = 'public, max-age=86400'
+        return resp
+    else:
+        # Full file response
+        resp = send_from_directory(
+            os.path.join(app.static_folder, 'videos'),
+            filename,
+            mimetype='video/mp4'
+        )
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = file_size
+        resp.headers['Cache-Control'] = 'public, max-age=86400'
+        return resp
+
+
 @app.route('/sitemap.xml')
 def sitemap_xml():
     sitemap = '''<?xml version="1.0" encoding="UTF-8"?>
