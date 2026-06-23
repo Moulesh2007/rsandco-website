@@ -460,6 +460,7 @@ body {
 /* ---------------- Hero Section ---------------- */
 .hero-section {
     height: 100vh;
+    height: 100dvh; /* true full-screen on mobile, avoids address-bar gap */
     position: relative;
     display: flex;
     justify-content: center;

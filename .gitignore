@@ -55,5 +55,8 @@ static/videos/*.MP4
 static/videos/*.mp4
 static/videos/*.mov
 static/videos/*.MOV
+# Exception: compressed hero video is small enough to include
+!static/videos/hero_video.mp4
+
 
 .vercel
