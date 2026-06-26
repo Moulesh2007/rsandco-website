@@ -1464,8 +1464,12 @@
                 const json = await res.json();
                 let recs   = json.data || [];
 
-                // Filter by company name keyword
-                recs = recs.filter(r => (r.company_name || '').toLowerCase().includes(keyword));
+                // Filter by company name keyword (robust multi-word match)
+                const searchTerms = keyword.split(/\s+/).filter(t => t);
+                recs = recs.filter(r => {
+                    const comp = (r.company_name || '').toLowerCase();
+                    return searchTerms.every(term => comp.includes(term));
+                });
                 
                 // Date range
                 if (startDate) recs = recs.filter(r => r.date >= startDate);

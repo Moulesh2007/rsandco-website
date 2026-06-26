@@ -3422,8 +3422,8 @@ def company_billing_report_pdf():
             all_bills = MOCK_DATABASE.get("manual_billing", [])
 
         # Filter
-        kw_lower = company_kw.lower()
-        all_bills = [b for b in all_bills if kw_lower in str(b.get('company_name', '')).lower()]
+        search_terms = [t for t in company_kw.lower().split() if t]
+        all_bills = [b for b in all_bills if all(term in str(b.get('company_name', '')).lower() for term in search_terms)]
         
         if start_date:
             all_bills = [b for b in all_bills if str(b.get('date', '')) >= start_date]
