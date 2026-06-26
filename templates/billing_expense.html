@@ -813,6 +813,10 @@
                         <label>Report Type</label>
                     </div>
                     <div class="form-group">
+                        <input type="text" id="report-company" placeholder=" ">
+                        <label>Company Name (Optional)</label>
+                    </div>
+                    <div class="form-group">
                         <input type="date" id="report-start-date" placeholder=" ">
                         <label>Start Date</label>
                     </div>
@@ -832,6 +836,52 @@
             <!-- Live report preview -->
             <div id="report-results" style="margin-top:24px;">
                 <div id="report-content"></div>
+            </div>
+
+            <!-- ─── Expense Category Report ─────────────────────────────────── -->
+            <div class="expense-form-section" style="margin-top:36px;border-top:2px solid #D4AF3744;padding-top:24px;">
+                <h3>🗂️ Expense Category Report</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:16px;">Filter expenses by category &amp; material type, sorted by date — export as a detailed PDF with totals.</p>
+                <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+                    <div class="form-group">
+                        <select id="cat-report-category" onchange="toggleCatReportMaterial()">
+                            <option value="">All Categories</option>
+                            <option value="Raw Material">Raw Material</option>
+                            <option value="Fuel">Fuel</option>
+                            <option value="Labor">Labour</option>
+                            <option value="Miscellaneous">Miscellaneous</option>
+                            <option value="Maintenance">Maintenance</option>
+                        </select>
+                        <label>Category</label>
+                    </div>
+                    <div class="form-group" id="cat-report-material-group" style="display:none;">
+                        <select id="cat-report-material">
+                            <option value="">All Materials</option>
+                            <option value="Cement">Cement</option>
+                            <option value="M-Sand">M-Sand</option>
+                            <option value="Jelly Stones">Jelly Stones</option>
+                            <option value="Aggregate">Aggregate</option>
+                            <option value="Steel">Steel</option>
+                        </select>
+                        <label>Material Type</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="cat-report-start" placeholder=" ">
+                        <label>Start Date</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="cat-report-end" placeholder=" ">
+                        <label>End Date</label>
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;">
+                    <button class="btn-primary" onclick="previewCategoryReport()">📊 Preview Report</button>
+                    <button class="btn-pdf" style="padding:12px 24px;font-size:14px;" onclick="exportCategoryReportPDF()">📄 Download PDF Report</button>
+                </div>
+
+                <!-- inline preview -->
+                <div id="cat-report-preview" style="margin-top:24px;"></div>
             </div>
         </div>
     </div>
@@ -1280,9 +1330,11 @@
             const startDate = document.getElementById('report-start-date').value;
             const endDate   = document.getElementById('report-end-date').value;
             const type      = document.getElementById('report-type').value;
+            const company   = document.getElementById('report-company').value;
             let url = '/api/reports/combined/pdf?type=' + type;
             if (startDate) url += '&start=' + startDate;
             if (endDate)   url += '&end='   + endDate;
+            if (company)   url += '&company=' + encodeURIComponent(company);
             window.open(url, '_blank');
         }
 
@@ -1291,7 +1343,139 @@
             setTimeout(() => exportExpensesExcel(), 600);
         }
 
-        // Toast notifications
+        // ═══ EXPENSE CATEGORY REPORT ═══════════════════════════════════════
+        function toggleCatReportMaterial() {
+            const cat = document.getElementById('cat-report-category').value;
+            const grp = document.getElementById('cat-report-material-group');
+            grp.style.display = (cat === 'Raw Material') ? 'block' : 'none';
+            if (cat !== 'Raw Material') document.getElementById('cat-report-material').value = '';
+        }
+
+        async function previewCategoryReport() {
+            const category   = document.getElementById('cat-report-category').value;
+            const matType    = document.getElementById('cat-report-material').value;
+            const startDate  = document.getElementById('cat-report-start').value;
+            const endDate    = document.getElementById('cat-report-end').value;
+            const preview    = document.getElementById('cat-report-preview');
+
+            preview.innerHTML = '<p style="color:#D4AF37;">⏳ Loading…</p>';
+
+            try {
+                const res  = await fetch('/api/expenses');
+                const json = await res.json();
+                let recs   = json.data || [];
+
+                // Filter by category
+                if (category) recs = recs.filter(r => r.category === category);
+                // Filter by material type
+                if (matType)  recs = recs.filter(r => r.material_type === matType);
+                // Filter by date range
+                if (startDate && endDate)
+                    recs = recs.filter(r => r.date >= startDate && r.date <= endDate);
+                // Sort by date ascending
+                recs.sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
+                const totalAmt  = recs.reduce((s,r) => s + parseFloat(r.total_amount||r.amount||0), 0);
+                const totalAdv  = recs.reduce((s,r) => s + parseFloat(r.advance_amount||0), 0);
+                const totalBal  = recs.reduce((s,r) => s + parseFloat(r.balance_amount||0), 0);
+
+                if (!recs.length) {
+                    preview.innerHTML = '<p style="color:#f87171;">⚠️ No expense records match the selected filters.</p>';
+                    return;
+                }
+
+                const catLabel = category || 'All Categories';
+                const matLabel = matType  || 'All Materials';
+                const period   = (startDate && endDate) ? `${startDate} → ${endDate}` : 'All Time';
+
+                let rows = recs.map((r, i) => {
+                    const amt  = parseFloat(r.total_amount||r.amount||0);
+                    const adv  = parseFloat(r.advance_amount||0);
+                    const bal  = parseFloat(r.balance_amount||0);
+                    const mat  = r.material_type ? ` — ${r.material_type}` : '';
+                    const qty  = r.quantity   ? `${r.quantity} T` : '—';
+                    const rate = r.rate_per_ton ? `₹${parseFloat(r.rate_per_ton).toLocaleString('en-IN')}` : '—';
+                    return `<tr style="background:${i%2===0?'#1e1e1e':'#252525'}">
+                        <td style="padding:7px 10px;color:#aaa;">${i+1}</td>
+                        <td style="padding:7px 10px;">${r.date||'—'}</td>
+                        <td style="padding:7px 10px;"><span style="background:#D4AF3722;color:#D4AF37;padding:2px 8px;border-radius:4px;font-size:12px;">${r.category||'—'}${mat}</span></td>
+                        <td style="padding:7px 10px;color:#ccc;">${r.description||'—'}</td>
+                        <td style="padding:7px 10px;">${qty}</td>
+                        <td style="padding:7px 10px;">${rate}</td>
+                        <td style="padding:7px 10px;font-weight:700;color:#fff;">₹${amt.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                        <td style="padding:7px 10px;color:#4ade80;">₹${adv.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                        <td style="padding:7px 10px;color:#f87171;">₹${bal.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                    </tr>`;
+                }).join('');
+
+                preview.innerHTML = `
+                <div style="background:#141414;border:1px solid #D4AF3744;border-radius:10px;padding:20px;margin-top:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+                        <div>
+                            <div style="font-size:15px;font-weight:700;color:#D4AF37;">🗂️ ${catLabel}${matType ? ' › ' + matLabel : ''}</div>
+                            <div style="font-size:12px;color:#888;margin-top:2px;">📅 Period: ${period} &nbsp;|&nbsp; ${recs.length} record(s)</div>
+                        </div>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <div style="background:#222;border:1px solid #D4AF3744;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL AMOUNT</div>
+                                <div style="font-size:16px;font-weight:700;color:#D4AF37;">₹${totalAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #4ade8044;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL ADVANCE</div>
+                                <div style="font-size:16px;font-weight:700;color:#4ade80;">₹${totalAdv.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #f8717144;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL BALANCE</div>
+                                <div style="font-size:16px;font-weight:700;color:#f87171;">₹${totalBal.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead>
+                                <tr style="background:#D4AF37;">
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">#</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Date</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Category / Material</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Description</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Qty (T)</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Rate/T</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Total (₹)</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Advance (₹)</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Balance (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                            <tfoot>
+                                <tr style="background:#1a1a1a;border-top:2px solid #D4AF37;">
+                                    <td colspan="6" style="padding:10px;font-weight:700;color:#D4AF37;text-align:right;">TOTALS →</td>
+                                    <td style="padding:10px;font-weight:700;color:#D4AF37;">₹${totalAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                    <td style="padding:10px;font-weight:700;color:#4ade80;">₹${totalAdv.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                    <td style="padding:10px;font-weight:700;color:#f87171;">₹${totalBal.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>`;
+            } catch(err) {
+                preview.innerHTML = `<p style="color:#f87171;">Error loading data: ${err.message}</p>`;
+            }
+        }
+
+        function exportCategoryReportPDF() {
+            const category  = document.getElementById('cat-report-category').value;
+            const matType   = document.getElementById('cat-report-material').value;
+            const startDate = document.getElementById('cat-report-start').value;
+            const endDate   = document.getElementById('cat-report-end').value;
+            let url = '/api/expenses/category-report/pdf?';
+            if (category)  url += 'category='  + encodeURIComponent(category) + '&';
+            if (matType)   url += 'material='  + encodeURIComponent(matType)  + '&';
+            if (startDate) url += 'start='     + startDate + '&';
+            if (endDate)   url += 'end='       + endDate;
+            window.open(url, '_blank');
+        }
+
+
         function showToast(message, type = 'success') {
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;

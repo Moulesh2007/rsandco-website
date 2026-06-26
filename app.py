@@ -2421,6 +2421,7 @@ def combined_report_pdf():
     report_type = request.args.get('type', 'combined')
     start_date  = request.args.get('start', '')
     end_date    = request.args.get('end', '')
+    company_name= request.args.get('company', '')
 
     try:
         # ── Fetch data ────────────────────────────────────────────
@@ -2436,10 +2437,18 @@ def combined_report_pdf():
             bills = MOCK_DATABASE.get("manual_billing", [])
             exps  = MOCK_DATABASE.get("expenses", [])
 
-        # ── Apply date filter ─────────────────────────────────────
+        # ── Apply filters ─────────────────────────────────────
         if start_date and end_date:
             bills = [r for r in bills if start_date <= str(r.get('date','')) <= end_date]
             exps  = [r for r in exps  if start_date <= str(r.get('date','')) <= end_date]
+
+        if company_name:
+            bills = [r for r in bills if company_name.lower() in str(r.get('company_name', '')).lower()]
+            if report_type == 'combined':
+                report_type = 'billing' # expenses don't have company_name, hide them.
+
+        bills.sort(key=lambda x: str(x.get('date', '')))
+        exps.sort(key=lambda x: str(x.get('date', '')))
 
         if report_type == 'billing':
             exps = []
@@ -2448,10 +2457,14 @@ def combined_report_pdf():
 
         # ── Totals ────────────────────────────────────────────────
         billing_total  = sum(float(r.get('total_amount', 0)) for r in bills)
+        advance_total  = sum(float(r.get('advance_amount', 0)) for r in bills)
         expense_total  = sum(float(r.get('total_amount', r.get('amount', 0))) for r in exps)
         raw_mat_total  = sum(float(r.get('total_amount', 0)) for r in exps if r.get('category') == 'Raw Material')
         grand_total    = billing_total + expense_total
-        date_range     = f"{start_date} to {end_date}" if start_date and end_date else "All Records"
+        
+        date_range = f"{start_date} to {end_date}" if start_date and end_date else "All Records"
+        if company_name:
+            date_range += f"  |  Company: {company_name}"
 
         # ── Canvas helpers ────────────────────────────────────────
         buffer = BytesIO()
@@ -2568,6 +2581,39 @@ def combined_report_pdf():
                 y -= 16
             y -= 8
 
+        # Grade-wise m³ breakdown and Advance info
+        grade_totals = {}
+        for r in bills:
+            g = str(r.get('grade', 'Unknown')).strip()
+            if not g: g = 'Unknown'
+            m3 = float(r.get('cubic_meters', 0))
+            grade_totals[g] = grade_totals.get(g, 0) + m3
+
+        if grade_totals or advance_total > 0:
+            c.setFont('Helvetica-Bold', 10); c.setFillColor(GOLD)
+            c.drawString(30, y, "Billing Summary")
+            c.setStrokeColor(GOLD); c.setLineWidth(0.8)
+            c.line(30, y-4, 250, y-4)
+            y -= 18
+            
+            c.setFont('Helvetica', 9); c.setFillColor(BLACK)
+            c.drawString(40, y, "\u2022  Total Advance Given:")
+            c.setFont('Helvetica-Bold', 9)
+            c.drawString(180, y, f"\u20b9 {advance_total:,.2f}")
+            y -= 16
+            
+            c.setFont('Helvetica', 9); c.setFillColor(BLACK)
+            c.drawString(40, y, "\u2022  Total Volume by Grade:")
+            y -= 16
+            
+            for g, m3 in sorted(grade_totals.items()):
+                c.setFont('Helvetica', 9); c.setFillColor(colors.HexColor('#444444'))
+                c.drawString(60, y, f"- {g}")
+                c.setFont('Helvetica-Bold', 9); c.setFillColor(BLACK)
+                c.drawString(180, y, f"{m3:,.2f} m\u00b3")
+                y -= 14
+            y -= 8
+
         draw_footer(page_num)
 
         # ── Shared table dimensions (used by both billing & expense pages) ──
@@ -2680,6 +2726,330 @@ def combined_report_pdf():
 
     except Exception as e:
         logger.error(f"Combined report PDF error: {e}")
+        import traceback; logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+
+# ── Expense Category-Filtered PDF Report ─────────────────────────────────────
+@app.route('/api/expenses/category-report/pdf', methods=['GET'])
+def expense_category_report_pdf():
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from datetime import datetime as dt2
+    import os
+
+    category   = request.args.get('category', '').strip()
+    mat_type   = request.args.get('material',  '').strip()
+    start_date = request.args.get('start',     '').strip()
+    end_date   = request.args.get('end',       '').strip()
+
+    try:
+        # ── Fetch all expense records ──────────────────────────────────────
+        if SUPABASE_CLIENT:
+            try:
+                resp = SUPABASE_CLIENT.table("expenses").select("*").execute()
+                all_recs = resp.data if resp.data else []
+            except Exception as e:
+                logger.error(f"Supabase expense fetch error: {e}")
+                all_recs = MOCK_DATABASE.get("expenses", [])
+        else:
+            all_recs = MOCK_DATABASE.get("expenses", [])
+
+        # ── Apply filters ─────────────────────────────────────────────────
+        if category:
+            all_recs = [r for r in all_recs if r.get('category', '') == category]
+        if mat_type:
+            all_recs = [r for r in all_recs if r.get('material_type', '') == mat_type]
+        if start_date and end_date:
+            all_recs = [r for r in all_recs if start_date <= str(r.get('date', '')) <= end_date]
+
+        # Sort by date ascending
+        all_recs.sort(key=lambda x: str(x.get('date', '')))
+
+        # Group by category for multi-category rendering
+        from collections import OrderedDict
+        groups = OrderedDict()
+        for r in all_recs:
+            cat = r.get('category', 'Other')
+            groups.setdefault(cat, []).append(r)
+
+        # ── Design tokens ─────────────────────────────────────────────────
+        buffer = BytesIO()
+        W, H   = A4
+        c      = pdf_canvas.Canvas(buffer, pagesize=A4)
+
+        GOLD       = colors.HexColor('#D4AF37')
+        DARK_GOLD  = colors.HexColor('#B8962E')
+        BLACK      = colors.HexColor('#1a1a1a')
+        WHITE      = colors.white
+        LIGHT_GRAY = colors.HexColor('#f5f5f5')
+        MID_GRAY   = colors.HexColor('#e0e0e0')
+        GREEN      = colors.HexColor('#22c55e')
+        RED        = colors.HexColor('#f87171')
+
+        logo_path = os.path.join('static', 'images', 'logo.png')
+
+        # ── Helpers ───────────────────────────────────────────────────────
+        def draw_header(title="EXPENSE CATEGORY REPORT"):
+            banner_h = 90
+            banner_y = H - banner_h
+            c.setFillColor(GOLD)
+            c.rect(0, banner_y, W, banner_h, fill=1, stroke=0)
+            # Logo box
+            lbw, lbh = 80, 66
+            lbx = 16
+            lby = banner_y + (banner_h - lbh) / 2
+            c.setFillColor(BLACK)
+            c.rect(lbx, lby, lbw, lbh, fill=1, stroke=0)
+            if os.path.exists(logo_path):
+                try:
+                    c.drawImage(logo_path, lbx+4, lby+4, width=lbw-8, height=lbh-8,
+                                preserveAspectRatio=True, mask='auto')
+                except Exception:
+                    pass
+            # Company info
+            cx2 = lbx + lbw + 14
+            cy2 = banner_y + banner_h / 2
+            c.setFont('Helvetica-Bold', 14); c.setFillColor(BLACK)
+            c.drawString(cx2, cy2 + 14, "R SUNDARAM & CO")
+            c.setFont('Helvetica', 8)
+            c.drawString(cx2, cy2 + 2,  "STRONG ROADS  BUILD TO LAST")
+            c.drawString(cx2, cy2 - 10, "READYMIX CONCRETE")
+            # Proprietor
+            px2 = W - 160
+            py2 = banner_y + 66
+            c.setFont('Helvetica', 8); c.drawString(px2, py2,      "Proprietor")
+            c.setFont('Helvetica-Bold', 11); c.drawString(px2, py2 - 13, "S MAGHESH")
+            c.setFont('Helvetica', 7.5)
+            c.drawString(px2, py2 - 25, "\u25a0 9940270304")
+            c.drawString(px2, py2 - 35, "\u25a0 rsundaram&co@gmail.com")
+            c.drawString(px2, py2 - 45, "\u25a0 Quarry Rd, Tiruneermalai, Chennai")
+            # Separator
+            c.setStrokeColor(DARK_GOLD); c.setLineWidth(2)
+            c.line(0, banner_y - 3, W, banner_y - 3)
+            # Title
+            title_y = banner_y - 38
+            c.setFont('Helvetica-Bold', 16); c.setFillColor(GOLD)
+            tw = c.stringWidth(title, 'Helvetica-Bold', 16)
+            c.drawString((W - tw) / 2, title_y, title)
+            c.setStrokeColor(GOLD); c.setLineWidth(1.5)
+            c.line((W - tw) / 2, title_y - 4, (W - tw) / 2 + tw, title_y - 4)
+            return title_y - 28
+
+        def draw_footer(page_num):
+            c.setFillColor(BLACK); c.rect(0, 0, W, 30, fill=1, stroke=0)
+            c.setFont('Helvetica-Bold', 7.5); c.setFillColor(GOLD)
+            c.drawString(30, 18, "R SUNDARAM & CO  \u2022  READYMIX CONCRETE  \u2022  Strong Roads  \u2022  Build To Last")
+            c.setFont('Helvetica', 7); c.setFillColor(colors.HexColor('#888888'))
+            c.drawRightString(W - 30, 18, f"Page {page_num}")
+            c.setStrokeColor(GOLD); c.setLineWidth(1.5)
+            c.rect(10, 10, W - 20, H - 20, fill=0, stroke=1)
+
+        def stat_box(x, y, w, h, label, value, val_color=GOLD):
+            c.setFillColor(colors.HexColor('#222222'))
+            c.setStrokeColor(GOLD); c.setLineWidth(0.8)
+            c.roundRect(x, y, w, h, 5, fill=1, stroke=1)
+            c.setFont('Helvetica', 7.5); c.setFillColor(colors.HexColor('#888888'))
+            c.drawString(x + 10, y + h - 15, label)
+            c.setFont('Helvetica-Bold', 12); c.setFillColor(val_color)
+            c.drawString(x + 10, y + 9, str(value))
+
+        # ── Table column spec ─────────────────────────────────────────────
+        tbl_x  = 25
+        row_h  = 18
+        hdr_h  = 22
+        cols   = [
+            ('Date',        62),
+            ('Description', 110),
+            ('Mat. Type',   72),
+            ('Qty (T)',     42),
+            ('Rate/T',      52),
+            ('Total \u20b9',        65),
+            ('Advance \u20b9',      65),
+            ('Balance \u20b9',      60),
+        ]
+
+        def draw_table_header(y):
+            c.setFillColor(GOLD)
+            c.rect(tbl_x, y - hdr_h, W - 50, hdr_h, fill=1, stroke=0)
+            cx3 = tbl_x + 5
+            for label, cw in cols:
+                c.setFont('Helvetica-Bold', 7.5); c.setFillColor(BLACK)
+                c.drawString(cx3, y - hdr_h + 7, label)
+                cx3 += cw
+            return y - hdr_h
+
+        def draw_row(y, r, idx):
+            bg = LIGHT_GRAY if idx % 2 == 0 else WHITE
+            c.setFillColor(bg)
+            c.rect(tbl_x, y - row_h, W - 50, row_h, fill=1, stroke=0)
+            c.setStrokeColor(MID_GRAY); c.setLineWidth(0.3)
+            c.rect(tbl_x, y - row_h, W - 50, row_h, fill=0, stroke=1)
+
+            total   = float(r.get('total_amount', r.get('amount', 0)))
+            advance = float(r.get('advance_amount', 0))
+            balance = float(r.get('balance_amount', total))
+            qty_val = r.get('quantity', '')
+            rate_val = r.get('rate_per_ton', '')
+
+            vals = [
+                str(r.get('date', '')),
+                str(r.get('description', '\u2014'))[:22],
+                str(r.get('material_type', '\u2014'))[:12],
+                str(qty_val) if qty_val else '\u2014',
+                f"\u20b9{float(rate_val):,.0f}" if rate_val else '\u2014',
+                f"\u20b9{total:,.2f}",
+                f"\u20b9{advance:,.2f}",
+                f"\u20b9{balance:,.2f}",
+            ]
+            cx3 = tbl_x + 5
+            for j, (val, (_, cw)) in enumerate(zip(vals, cols)):
+                c.setFont('Helvetica', 7); c.setFillColor(BLACK)
+                c.drawString(cx3, y - row_h + 5, val)
+                cx3 += cw
+            return y - row_h
+
+        def draw_totals_row(y, total_amt, total_adv, total_bal):
+            c.setFillColor(colors.HexColor('#222222'))
+            c.rect(tbl_x, y - hdr_h, W - 50, hdr_h, fill=1, stroke=0)
+            c.setStrokeColor(GOLD); c.setLineWidth(0.8)
+            c.rect(tbl_x, y - hdr_h, W - 50, hdr_h, fill=0, stroke=1)
+            # "TOTALS" label
+            c.setFont('Helvetica-Bold', 8); c.setFillColor(GOLD)
+            c.drawString(tbl_x + 5, y - hdr_h + 7, "TOTALS")
+            # Calculate x positions for total columns
+            cx3 = tbl_x + 5
+            for idx2, (_, cw) in enumerate(cols):
+                if idx2 == 5:   # Total ₹
+                    c.setFont('Helvetica-Bold', 8); c.setFillColor(GOLD)
+                    c.drawString(cx3, y - hdr_h + 7, f"\u20b9{total_amt:,.2f}")
+                elif idx2 == 6:  # Advance ₹
+                    c.setFont('Helvetica-Bold', 8); c.setFillColor(GREEN)
+                    c.drawString(cx3, y - hdr_h + 7, f"\u20b9{total_adv:,.2f}")
+                elif idx2 == 7:  # Balance ₹
+                    c.setFont('Helvetica-Bold', 8); c.setFillColor(RED)
+                    c.drawString(cx3, y - hdr_h + 7, f"\u20b9{total_bal:,.2f}")
+                cx3 += cw
+            return y - hdr_h
+
+        # ════════════════════════════════════════════════════════════════════
+        # SUMMARY PAGE
+        # ════════════════════════════════════════════════════════════════════
+        page_num = 1
+        y = draw_header("EXPENSE CATEGORY REPORT")
+
+        # Meta strip
+        cat_label   = category  if category  else "All Categories"
+        mat_label   = mat_type  if mat_type  else "All Types"
+        period_lbl  = f"{start_date} to {end_date}" if start_date and end_date else "All Time"
+        filter_lbl  = f"Category: {cat_label}"
+        if mat_type:
+            filter_lbl += f"  |  Material: {mat_label}"
+        filter_lbl += f"  |  Period: {period_lbl}"
+
+        c.setFont('Helvetica', 8.5); c.setFillColor(colors.HexColor('#888888'))
+        c.drawString(30, y,       filter_lbl)
+        c.drawString(30, y - 14, f"Generated: {dt2.now().strftime('%d %b %Y  %H:%M')}")
+        y -= 36
+
+        # Overall totals
+        grand_total_amt = sum(float(r.get('total_amount', r.get('amount', 0))) for r in all_recs)
+        grand_total_adv = sum(float(r.get('advance_amount', 0)) for r in all_recs)
+        grand_total_bal = sum(float(r.get('balance_amount', 0)) for r in all_recs)
+        total_count     = len(all_recs)
+
+        bw  = (W - 60) / 4 - 8
+        bh  = 56
+        stat_box(30,            y - bh, bw, bh, "TOTAL RECORDS",   str(total_count),                      GOLD)
+        stat_box(30 + bw + 8,   y - bh, bw, bh, "TOTAL AMOUNT",    f"\u20b9 {grand_total_amt:,.2f}",      GOLD)
+        stat_box(30 + 2*(bw+8), y - bh, bw, bh, "TOTAL ADVANCE",   f"\u20b9 {grand_total_adv:,.2f}",      GREEN)
+        stat_box(30 + 3*(bw+8), y - bh, bw, bh, "TOTAL BALANCE",   f"\u20b9 {grand_total_bal:,.2f}",      RED)
+        y -= bh + 20
+
+        # Category breakdown table
+        if len(groups) > 1:
+            c.setFont('Helvetica-Bold', 10); c.setFillColor(GOLD)
+            c.drawString(30, y, "Breakdown by Category")
+            c.setStrokeColor(GOLD); c.setLineWidth(0.8)
+            c.line(30, y - 4, 230, y - 4)
+            y -= 20
+
+            for gcat, grecs in groups.items():
+                gamt = sum(float(r.get('total_amount', r.get('amount', 0))) for r in grecs)
+                gadv = sum(float(r.get('advance_amount', 0)) for r in grecs)
+                c.setFont('Helvetica', 8.5); c.setFillColor(BLACK)
+                c.drawString(40, y, f"\u2022  {gcat}  ({len(grecs)} record(s))")
+                c.setFont('Helvetica-Bold', 8.5)
+                c.drawString(220, y, f"\u20b9 {gamt:,.2f}")
+                c.setFont('Helvetica', 8.5); c.setFillColor(GREEN)
+                c.drawString(320, y, f"Adv: \u20b9 {gadv:,.2f}")
+                c.setFillColor(BLACK)
+                y -= 16
+                if y < 60:
+                    draw_footer(page_num); c.showPage(); page_num += 1
+                    y = draw_header("EXPENSE CATEGORY REPORT (cont.)")
+
+        draw_footer(page_num)
+
+        # ════════════════════════════════════════════════════════════════════
+        # DETAIL PAGES — one section per category
+        # ════════════════════════════════════════════════════════════════════
+        for gcat, grecs in groups.items():
+            c.showPage(); page_num += 1
+            section_title = f"EXPENSE RECORDS — {gcat.upper()}"
+            if mat_type:
+                section_title += f" / {mat_type.upper()}"
+            y = draw_header(section_title)
+
+            # Category totals
+            cat_total_amt = sum(float(r.get('total_amount', r.get('amount', 0))) for r in grecs)
+            cat_total_adv = sum(float(r.get('advance_amount', 0)) for r in grecs)
+            cat_total_bal = sum(float(r.get('balance_amount', 0)) for r in grecs)
+
+            bw2 = (W - 60) / 3 - 8
+            stat_box(30,              y - bh, bw2, bh, "TOTAL AMOUNT",   f"\u20b9 {cat_total_amt:,.2f}",  GOLD)
+            stat_box(30 + bw2 + 8,   y - bh, bw2, bh, "TOTAL ADVANCE",  f"\u20b9 {cat_total_adv:,.2f}",  GREEN)
+            stat_box(30 + 2*(bw2+8), y - bh, bw2, bh, "TOTAL BALANCE",  f"\u20b9 {cat_total_bal:,.2f}",  RED)
+            y -= bh + 16
+
+            # Date range info
+            c.setFont('Helvetica', 8); c.setFillColor(colors.HexColor('#888888'))
+            c.drawString(30, y, f"Period: {period_lbl}   |   {len(grecs)} record(s)   |   Sorted by date")
+            y -= 20
+
+            # Table
+            y = draw_table_header(y)
+
+            for idx3, r in enumerate(grecs):
+                if y < 80:
+                    draw_footer(page_num); c.showPage(); page_num += 1
+                    y = draw_header(section_title + " (cont.)")
+                    y = draw_table_header(y)
+                y = draw_row(y, r, idx3)
+
+            # Totals footer row
+            if y < 80:
+                draw_footer(page_num); c.showPage(); page_num += 1
+                y = draw_header(section_title + " (cont.)")
+            y = draw_totals_row(y, cat_total_amt, cat_total_adv, cat_total_bal)
+
+            draw_footer(page_num)
+
+        c.save()
+        buffer.seek(0)
+
+        safe_cat = (category or 'all').replace(' ', '_')
+        fname = f"expense_report_{safe_cat}_{dt2.now().strftime('%Y%m%d')}.pdf"
+        resp = make_response(buffer.getvalue())
+        resp.headers['Content-Disposition'] = f'inline; filename={fname}'
+        resp.headers['Content-Type'] = 'application/pdf'
+        return resp
+
+    except Exception as e:
+        logger.error(f"Expense category report PDF error: {e}")
         import traceback; logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
