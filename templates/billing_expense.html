@@ -1460,7 +1460,7 @@
             preview.innerHTML = '<p style="color:#D4AF37;">⏳ Searching…</p>';
 
             try {
-                const res  = await fetch('/api/bills');
+                const res  = await fetch('/api/manual-billing');
                 const json = await res.json();
                 let recs   = json.data || [];
 

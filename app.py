@@ -3413,13 +3413,13 @@ def company_billing_report_pdf():
         # Fetch billing records
         if SUPABASE_CLIENT:
             try:
-                resp = SUPABASE_CLIENT.table("billing").select("*").execute()
+                resp = SUPABASE_CLIENT.table("manual_billing").select("*").execute()
                 all_bills = resp.data if resp.data else []
             except Exception as e:
                 logger.error(f"Supabase billing fetch error: {e}")
-                all_bills = MOCK_DATABASE.get("billing", [])
+                all_bills = MOCK_DATABASE.get("manual_billing", [])
         else:
-            all_bills = MOCK_DATABASE.get("billing", [])
+            all_bills = MOCK_DATABASE.get("manual_billing", [])
 
         # Filter
         kw_lower = company_kw.lower()
