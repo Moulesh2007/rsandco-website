@@ -1348,9 +1348,13 @@
             let bills = bRes.data || [];
             let exps  = eRes.data || [];
 
-            if (startDate && endDate) {
-                bills = bills.filter(r => r.date >= startDate && r.date <= endDate);
-                exps  = exps.filter(r  => r.date >= startDate && r.date <= endDate);
+            if (startDate) {
+                bills = bills.filter(r => r.date >= startDate);
+                exps  = exps.filter(r  => r.date >= startDate);
+            }
+            if (endDate) {
+                bills = bills.filter(r => r.date <= endDate);
+                exps  = exps.filter(r  => r.date <= endDate);
             }
 
             const billingTotal  = bills.reduce((s,r) => s + parseFloat(r.total_amount||0), 0);
@@ -1430,8 +1434,8 @@
                 // Filter by material type
                 if (matType)  recs = recs.filter(r => r.material_type === matType);
                 // Filter by date range
-                if (startDate && endDate)
-                    recs = recs.filter(r => r.date >= startDate && r.date <= endDate);
+                if (startDate) recs = recs.filter(r => r.date >= startDate);
+                if (endDate)   recs = recs.filter(r => r.date <= endDate);
                 // Sort by date ascending
                 recs.sort((a,b) => (a.date||'').localeCompare(b.date||''));
 
@@ -1567,17 +1571,22 @@
                 const json = await res.json();
                 let recs   = json.data || [];
 
-                // Filter: description keyword (case-insensitive, checks description + material_type)
+                // Filter: description keyword (case-insensitive, checks description + material_type + category)
+                const searchTerms = [keyword];
+                if (keyword === 'labour') searchTerms.push('labor');
+                else if (keyword === 'labor') searchTerms.push('labour');
+
                 recs = recs.filter(r => {
                     const desc = (r.description || '').toLowerCase();
                     const mat  = (r.material_type || '').toLowerCase();
-                    return desc.includes(keyword) || mat.includes(keyword);
+                    const cat  = (r.category || '').toLowerCase();
+                    return searchTerms.some(term => desc.includes(term) || mat.includes(term) || cat.includes(term));
                 });
                 // Optional category filter
                 if (category) recs = recs.filter(r => r.category === category);
                 // Date range
-                if (startDate && endDate)
-                    recs = recs.filter(r => r.date >= startDate && r.date <= endDate);
+                if (startDate) recs = recs.filter(r => r.date >= startDate);
+                if (endDate)   recs = recs.filter(r => r.date <= endDate);
                 // Sort by date
                 recs.sort((a,b) => (a.date||'').localeCompare(b.date||''));
 

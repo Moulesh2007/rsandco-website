@@ -2438,9 +2438,12 @@ def combined_report_pdf():
             exps  = MOCK_DATABASE.get("expenses", [])
 
         # ── Apply filters ─────────────────────────────────────
-        if start_date and end_date:
-            bills = [r for r in bills if start_date <= str(r.get('date','')) <= end_date]
-            exps  = [r for r in exps  if start_date <= str(r.get('date','')) <= end_date]
+        if start_date:
+            bills = [r for r in bills if str(r.get('date', '')) >= start_date]
+            exps  = [r for r in exps  if str(r.get('date', '')) >= start_date]
+        if end_date:
+            bills = [r for r in bills if str(r.get('date', '')) <= end_date]
+            exps  = [r for r in exps  if str(r.get('date', '')) <= end_date]
 
         if company_name:
             bills = [r for r in bills if company_name.lower() in str(r.get('company_name', '')).lower()]
@@ -2763,8 +2766,10 @@ def expense_category_report_pdf():
             all_recs = [r for r in all_recs if r.get('category', '') == category]
         if mat_type:
             all_recs = [r for r in all_recs if r.get('material_type', '') == mat_type]
-        if start_date and end_date:
-            all_recs = [r for r in all_recs if start_date <= str(r.get('date', '')) <= end_date]
+        if start_date:
+            all_recs = [r for r in all_recs if str(r.get('date', '')) >= start_date]
+        if end_date:
+            all_recs = [r for r in all_recs if str(r.get('date', '')) <= end_date]
 
         # Sort by date ascending
         all_recs.sort(key=lambda x: str(x.get('date', '')))
@@ -3086,15 +3091,25 @@ def expense_description_report_pdf():
 
         # ── Filter ────────────────────────────────────────────────────────
         kw_lower = keyword.lower()
+        search_terms = [kw_lower]
+        if kw_lower == 'labour': search_terms.append('labor')
+        elif kw_lower == 'labor': search_terms.append('labour')
+
         all_recs = [
             r for r in all_recs
-            if kw_lower in str(r.get('description', '')).lower()
-            or kw_lower in str(r.get('material_type', '')).lower()
+            if any(
+                term in (r.get('description') or '').lower() or
+                term in (r.get('material_type') or '').lower() or
+                term in (r.get('category') or '').lower()
+                for term in search_terms
+            )
         ]
         if category:
             all_recs = [r for r in all_recs if r.get('category', '') == category]
-        if start_date and end_date:
-            all_recs = [r for r in all_recs if start_date <= str(r.get('date', '')) <= end_date]
+        if start_date:
+            all_recs = [r for r in all_recs if str(r.get('date', '')) >= start_date]
+        if end_date:
+            all_recs = [r for r in all_recs if str(r.get('date', '')) <= end_date]
 
         # Sort by date ascending
         all_recs.sort(key=lambda x: str(x.get('date', '')))
