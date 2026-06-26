@@ -323,6 +323,8 @@
         .btn-xls  { background: #28a745; color: #fff; border: none; border-radius:4px; padding:5px 11px; font-size:11px; font-weight:700; cursor:pointer; transition:background .2s; }
         .btn-xls:hover { background: #22c55e; }
         .btn-del  { background: #dc3545; color: #fff; border: none; border-radius:4px; padding:5px 11px; font-size:11px; font-weight:700; cursor:pointer; }
+        .desc-chip { background:#1a1a1a; color:#D4AF37; border:1px solid #D4AF3766; border-radius:20px; padding:4px 14px; font-size:12px; font-weight:600; cursor:pointer; transition:all .2s; }
+        .desc-chip:hover { background:#D4AF37; color:#1a1a1a; }
         .expense-form-section {
             background: #222;
             border: 1px solid #333;
@@ -882,6 +884,64 @@
 
                 <!-- inline preview -->
                 <div id="cat-report-preview" style="margin-top:24px;"></div>
+            </div>
+
+            <!-- ─── Expense Description Search Report ──────────────────────── -->
+            <div class="expense-form-section" style="margin-top:36px;border-top:2px solid #D4AF3744;padding-top:24px;">
+                <h3>🔍 Expense Description Search Report</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:16px;">
+                    Search expenses by any keyword in the description (e.g. "diesel", "cement bags", "overtime") —
+                    results sorted by date with total amount &amp; advance.
+                </p>
+                <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+                    <div class="form-group" style="grid-column:span 2;">
+                        <input type="text" id="desc-report-keyword" placeholder=" " oninput="descReportKeywordHint()">
+                        <label>Description Keyword *</label>
+                    </div>
+                    <div class="form-group">
+                        <select id="desc-report-category">
+                            <option value="">All Categories</option>
+                            <option value="Raw Material">Raw Material</option>
+                            <option value="Fuel">Fuel</option>
+                            <option value="Labor">Labour</option>
+                            <option value="Miscellaneous">Miscellaneous</option>
+                            <option value="Maintenance">Maintenance</option>
+                        </select>
+                        <label>Category (Optional)</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="desc-report-start" placeholder=" ">
+                        <label>Start Date</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="desc-report-end" placeholder=" ">
+                        <label>End Date</label>
+                    </div>
+                </div>
+
+                <!-- Quick keyword chips -->
+                <div style="margin-top:10px;margin-bottom:4px;">
+                    <span style="font-size:12px;color:#888;margin-right:8px;">Quick:</span>
+                    <span id="desc-keyword-hint" style="font-size:12px;color:#D4AF37;"></span>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="desc-quick-chips">
+                    <button type="button" class="desc-chip" onclick="setDescKeyword('cement')">Cement</button>
+                    <button type="button" class="desc-chip" onclick="setDescKeyword('m-sand')">M-Sand</button>
+                    <button type="button" class="desc-chip" onclick="setDescKeyword('jelly')">Jelly Stones</button>
+                    <button type="button" class="desc-chip" onclick="setDescKeyword('aggregate')">Aggregate</button>
+                    <button type="button" class="desc-chip" onclick="setDescKeyword('diesel')">Diesel/Fuel</button>
+                    <button type="button" class="desc-chip" onclick="setDescKeyword('labour')">Labour</button>
+                    <button type="button" class="desc-chip" onclick="setDescKeyword('steel')">Steel</button>
+                    <button type="button" class="desc-chip" onclick="setDescKeyword('maintenance')">Maintenance</button>
+                </div>
+
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">
+                    <button class="btn-primary" onclick="previewDescReport()">📊 Preview Report</button>
+                    <button class="btn-pdf" style="padding:12px 24px;font-size:14px;" onclick="exportDescReportPDF()">📄 Download PDF Report</button>
+                </div>
+
+                <!-- inline preview -->
+                <div id="desc-report-preview" style="margin-top:24px;"></div>
             </div>
         </div>
     </div>
@@ -1475,6 +1535,154 @@
             window.open(url, '_blank');
         }
 
+
+        // ═══ DESCRIPTION SEARCH REPORT ══════════════════════════════════
+        function setDescKeyword(word) {
+            document.getElementById('desc-report-keyword').value = word;
+            descReportKeywordHint();
+        }
+
+        function descReportKeywordHint() {
+            const kw = (document.getElementById('desc-report-keyword').value || '').trim();
+            const hint = document.getElementById('desc-keyword-hint');
+            hint.textContent = kw ? `Searching for: "${kw}"` : '';
+        }
+
+        async function previewDescReport() {
+            const keyword   = (document.getElementById('desc-report-keyword').value || '').trim().toLowerCase();
+            const category  = document.getElementById('desc-report-category').value;
+            const startDate = document.getElementById('desc-report-start').value;
+            const endDate   = document.getElementById('desc-report-end').value;
+            const preview   = document.getElementById('desc-report-preview');
+
+            if (!keyword) {
+                preview.innerHTML = '<p style="color:#f87171;">⚠️ Please enter a description keyword to search.</p>';
+                return;
+            }
+
+            preview.innerHTML = '<p style="color:#D4AF37;">⏳ Searching…</p>';
+
+            try {
+                const res  = await fetch('/api/expenses');
+                const json = await res.json();
+                let recs   = json.data || [];
+
+                // Filter: description keyword (case-insensitive, checks description + material_type)
+                recs = recs.filter(r => {
+                    const desc = (r.description || '').toLowerCase();
+                    const mat  = (r.material_type || '').toLowerCase();
+                    return desc.includes(keyword) || mat.includes(keyword);
+                });
+                // Optional category filter
+                if (category) recs = recs.filter(r => r.category === category);
+                // Date range
+                if (startDate && endDate)
+                    recs = recs.filter(r => r.date >= startDate && r.date <= endDate);
+                // Sort by date
+                recs.sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
+                const totalAmt = recs.reduce((s,r) => s + parseFloat(r.total_amount||r.amount||0), 0);
+                const totalAdv = recs.reduce((s,r) => s + parseFloat(r.advance_amount||0), 0);
+                const totalBal = recs.reduce((s,r) => s + parseFloat(r.balance_amount||0), 0);
+
+                if (!recs.length) {
+                    preview.innerHTML = `<p style="color:#f87171;">⚠️ No records found matching "${keyword}".</p>`;
+                    return;
+                }
+
+                const period = (startDate && endDate) ? `${startDate} → ${endDate}` : 'All Time';
+                const catLbl = category || 'All Categories';
+
+                const rows = recs.map((r, i) => {
+                    const amt = parseFloat(r.total_amount||r.amount||0);
+                    const adv = parseFloat(r.advance_amount||0);
+                    const bal = parseFloat(r.balance_amount||0);
+                    const qty  = r.quantity    ? `${r.quantity} T` : '—';
+                    const rate = r.rate_per_ton ? `₹${parseFloat(r.rate_per_ton).toLocaleString('en-IN')}` : '—';
+                    // Highlight matched keyword in description
+                    const rawDesc = r.description || '—';
+                    const hiDesc  = rawDesc.replace(new RegExp(keyword, 'gi'), m => `<mark style="background:#D4AF3755;color:#fff;border-radius:2px;">${m}</mark>`);
+                    return `<tr style="background:${i%2===0?'#1e1e1e':'#252525'}">
+                        <td style="padding:7px 10px;color:#aaa;">${i+1}</td>
+                        <td style="padding:7px 10px;">${r.date||'—'}</td>
+                        <td style="padding:7px 10px;"><span style="background:#D4AF3722;color:#D4AF37;padding:2px 8px;border-radius:4px;font-size:12px;">${r.category||'—'}</span></td>
+                        <td style="padding:7px 10px;color:#ccc;">${hiDesc}</td>
+                        <td style="padding:7px 10px;color:#aaa;font-size:12px;">${r.material_type||'—'}</td>
+                        <td style="padding:7px 10px;">${qty}</td>
+                        <td style="padding:7px 10px;">${rate}</td>
+                        <td style="padding:7px 10px;font-weight:700;color:#fff;">₹${amt.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                        <td style="padding:7px 10px;color:#4ade80;">₹${adv.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                        <td style="padding:7px 10px;color:#f87171;">₹${bal.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                    </tr>`;
+                }).join('');
+
+                preview.innerHTML = `
+                <div style="background:#141414;border:1px solid #D4AF3744;border-radius:10px;padding:20px;margin-top:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+                        <div>
+                            <div style="font-size:15px;font-weight:700;color:#D4AF37;">🔍 Results for: "${keyword}"</div>
+                            <div style="font-size:12px;color:#888;margin-top:2px;">Category: ${catLbl} &nbsp;|&nbsp; 📅 ${period} &nbsp;|&nbsp; ${recs.length} record(s)</div>
+                        </div>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <div style="background:#222;border:1px solid #D4AF3744;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL AMOUNT</div>
+                                <div style="font-size:16px;font-weight:700;color:#D4AF37;">₹${totalAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #4ade8044;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL ADVANCE</div>
+                                <div style="font-size:16px;font-weight:700;color:#4ade80;">₹${totalAdv.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #f8717144;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL BALANCE</div>
+                                <div style="font-size:16px;font-weight:700;color:#f87171;">₹${totalBal.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead>
+                                <tr style="background:#D4AF37;">
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">#</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Date</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Category</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Description</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Material</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Qty</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Rate/T</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Total (₹)</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Advance (₹)</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Balance (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                            <tfoot>
+                                <tr style="background:#1a1a1a;border-top:2px solid #D4AF37;">
+                                    <td colspan="7" style="padding:10px;font-weight:700;color:#D4AF37;text-align:right;">TOTALS →</td>
+                                    <td style="padding:10px;font-weight:700;color:#D4AF37;">₹${totalAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                    <td style="padding:10px;font-weight:700;color:#4ade80;">₹${totalAdv.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                    <td style="padding:10px;font-weight:700;color:#f87171;">₹${totalBal.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>`;
+            } catch(err) {
+                preview.innerHTML = `<p style="color:#f87171;">Error: ${err.message}</p>`;
+            }
+        }
+
+        function exportDescReportPDF() {
+            const keyword   = (document.getElementById('desc-report-keyword').value || '').trim();
+            const category  = document.getElementById('desc-report-category').value;
+            const startDate = document.getElementById('desc-report-start').value;
+            const endDate   = document.getElementById('desc-report-end').value;
+            if (!keyword) { alert('Please enter a description keyword first.'); return; }
+            let url = '/api/expenses/description-report/pdf?keyword=' + encodeURIComponent(keyword);
+            if (category)  url += '&category='  + encodeURIComponent(category);
+            if (startDate) url += '&start='     + startDate;
+            if (endDate)   url += '&end='       + endDate;
+            window.open(url, '_blank');
+        }
 
         function showToast(message, type = 'success') {
             const toast = document.createElement('div');
