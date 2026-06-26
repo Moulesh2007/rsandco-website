@@ -840,6 +840,38 @@
                 <div id="report-content"></div>
             </div>
 
+            <!-- ─── Company Billing Report ─────────────────────────────────── -->
+            <div class="expense-form-section" style="margin-top:36px;border-top:2px solid #D4AF3744;padding-top:24px;">
+                <h3>🏢 Company Billing Report</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:16px;">Filter billing records by company name to see total cubic meters (m³), grades, rates, and advances given.</p>
+                <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+                    <div class="form-group" style="grid-column:span 2;">
+                        <input type="text" id="company-report-name" placeholder=" " oninput="companyReportHint()">
+                        <label>Company Name (Keyword) *</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="company-report-start" placeholder=" ">
+                        <label>Start Date</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="company-report-end" placeholder=" ">
+                        <label>End Date</label>
+                    </div>
+                </div>
+
+                <div style="margin-top:10px;margin-bottom:14px;">
+                    <span id="company-report-hint" style="font-size:12px;color:#D4AF37;"></span>
+                </div>
+
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;">
+                    <button class="btn-primary" onclick="previewCompanyReport()">📊 Preview Report</button>
+                    <button class="btn-pdf" style="padding:12px 24px;font-size:14px;" onclick="exportCompanyReportPDF()">📄 Download PDF Report</button>
+                </div>
+
+                <!-- inline preview -->
+                <div id="company-report-preview" style="margin-top:24px;"></div>
+            </div>
+
             <!-- ─── Expense Category Report ─────────────────────────────────── -->
             <div class="expense-form-section" style="margin-top:36px;border-top:2px solid #D4AF3744;padding-top:24px;">
                 <h3>🗂️ Expense Category Report</h3>
@@ -1407,7 +1439,143 @@
             setTimeout(() => exportExpensesExcel(), 600);
         }
 
-        // ═══ EXPENSE CATEGORY REPORT ═══════════════════════════════════════
+        // ═══ COMPANY BILLING REPORT ══════════════════════════════════════
+        function companyReportHint() {
+            const kw = (document.getElementById('company-report-name').value || '').trim();
+            const hint = document.getElementById('company-report-hint');
+            hint.textContent = kw ? `Searching for: "${kw}"` : '';
+        }
+
+        async function previewCompanyReport() {
+            const keyword   = (document.getElementById('company-report-name').value || '').trim().toLowerCase();
+            const startDate = document.getElementById('company-report-start').value;
+            const endDate   = document.getElementById('company-report-end').value;
+            const preview   = document.getElementById('company-report-preview');
+
+            if (!keyword) {
+                preview.innerHTML = '<p style="color:#f87171;">⚠️ Please enter a company name keyword.</p>';
+                return;
+            }
+
+            preview.innerHTML = '<p style="color:#D4AF37;">⏳ Searching…</p>';
+
+            try {
+                const res  = await fetch('/api/bills');
+                const json = await res.json();
+                let recs   = json.data || [];
+
+                // Filter by company name keyword
+                recs = recs.filter(r => (r.company_name || '').toLowerCase().includes(keyword));
+                
+                // Date range
+                if (startDate) recs = recs.filter(r => r.date >= startDate);
+                if (endDate)   recs = recs.filter(r => r.date <= endDate);
+                
+                // Sort by date
+                recs.sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
+                const totalM3  = recs.reduce((s,r) => s + parseFloat(r.cubic_meters||0), 0);
+                const totalAmt = recs.reduce((s,r) => s + parseFloat(r.total_amount||0), 0);
+                const totalAdv = recs.reduce((s,r) => s + parseFloat(r.advance_amount||0), 0);
+                const totalBal = recs.reduce((s,r) => s + parseFloat(r.balance_amount||0), 0);
+
+                if (!recs.length) {
+                    preview.innerHTML = `<p style="color:#f87171;">⚠️ No records found matching "${keyword}".</p>`;
+                    return;
+                }
+
+                const period = (startDate || endDate) ? `${startDate||'Start'} → ${endDate||'Today'}` : 'All Time';
+
+                const rows = recs.map((r, i) => {
+                    const m3   = parseFloat(r.cubic_meters||0);
+                    const rate = parseFloat(r.rate_per_cubic||0);
+                    const amt  = parseFloat(r.total_amount||0);
+                    const adv  = parseFloat(r.advance_amount||0);
+                    const bal  = parseFloat(r.balance_amount||0);
+                    
+                    const hiDesc = (r.company_name||'—').replace(new RegExp(keyword, 'gi'), m => `<mark style="background:#D4AF3755;color:#fff;border-radius:2px;">${m}</mark>`);
+                    
+                    return `<tr style="background:${i%2===0?'#1e1e1e':'#252525'}">
+                        <td style="padding:7px 10px;color:#aaa;">${i+1}</td>
+                        <td style="padding:7px 10px;">${r.date||'—'}</td>
+                        <td style="padding:7px 10px;">${hiDesc}</td>
+                        <td style="padding:7px 10px;color:#ccc;">${r.grade||'—'}</td>
+                        <td style="padding:7px 10px;">${m3.toFixed(2)}</td>
+                        <td style="padding:7px 10px;">₹${rate.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                        <td style="padding:7px 10px;font-weight:700;color:#fff;">₹${amt.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                        <td style="padding:7px 10px;color:#4ade80;">₹${adv.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                        <td style="padding:7px 10px;color:#f87171;">₹${bal.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                    </tr>`;
+                }).join('');
+
+                preview.innerHTML = `
+                <div style="background:#141414;border:1px solid #D4AF3744;border-radius:10px;padding:20px;margin-top:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+                        <div>
+                            <div style="font-size:15px;font-weight:700;color:#D4AF37;">🔍 Results for: "${keyword}"</div>
+                            <div style="font-size:12px;color:#888;margin-top:2px;">📅 ${period} &nbsp;|&nbsp; ${recs.length} record(s)</div>
+                        </div>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <div style="background:#222;border:1px solid #D4AF3744;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL M³</div>
+                                <div style="font-size:16px;font-weight:700;color:#D4AF37;">${totalM3.toFixed(2)}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #D4AF3744;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL AMOUNT</div>
+                                <div style="font-size:16px;font-weight:700;color:#D4AF37;">₹${totalAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #4ade8044;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">ADVANCE GIVEN</div>
+                                <div style="font-size:16px;font-weight:700;color:#4ade80;">₹${totalAdv.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead>
+                                <tr style="background:#D4AF37;">
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">#</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Date</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Company</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Grade</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Qty (m³)</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Rate</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Total (₹)</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Advance (₹)</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Balance (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                            <tfoot>
+                                <tr style="background:#1a1a1a;border-top:2px solid #D4AF37;">
+                                    <td colspan="4" style="padding:10px;font-weight:700;color:#D4AF37;text-align:right;">TOTALS →</td>
+                                    <td style="padding:10px;font-weight:700;color:#D4AF37;">${totalM3.toFixed(2)}</td>
+                                    <td style="padding:10px;"></td>
+                                    <td style="padding:10px;font-weight:700;color:#D4AF37;">₹${totalAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                    <td style="padding:10px;font-weight:700;color:#4ade80;">₹${totalAdv.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                    <td style="padding:10px;font-weight:700;color:#f87171;">₹${totalBal.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>`;
+            } catch(err) {
+                preview.innerHTML = `<p style="color:#f87171;">Error: ${err.message}</p>`;
+            }
+        }
+
+        function exportCompanyReportPDF() {
+            const keyword   = (document.getElementById('company-report-name').value || '').trim();
+            const startDate = document.getElementById('company-report-start').value;
+            const endDate   = document.getElementById('company-report-end').value;
+            if (!keyword) { alert('Please enter a company name keyword first.'); return; }
+            let url = '/api/reports/company-billing/pdf?company=' + encodeURIComponent(keyword);
+            if (startDate) url += '&start=' + startDate;
+            if (endDate)   url += '&end='   + endDate;
+            window.open(url, '_blank');
+        }
+
+
         function toggleCatReportMaterial() {
             const cat = document.getElementById('cat-report-category').value;
             const grp = document.getElementById('cat-report-material-group');
