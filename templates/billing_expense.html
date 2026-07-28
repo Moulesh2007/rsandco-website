@@ -555,6 +555,8 @@
         <div class="tabs">
             <div class="tab active" data-tab="manual-billing">Manual Billing</div>
             <div class="tab" data-tab="expenses">Expense Management</div>
+            <div class="tab" data-tab="supplier-payment">Supplier Payment Summary</div>
+            <div class="tab" data-tab="client-billing">Client Billing Summary</div>
             <div class="tab" data-tab="reports">Reports & Export</div>
         </div>
 
@@ -605,6 +607,7 @@
                     <div class="form-group">
                         <select id="grade" required>
                             <option value="">Select Grade</option>
+                            <option value="M10">M10</option>
                             <option value="M15">M15</option>
                             <option value="M20">M20</option>
                             <option value="M25">M25</option>
@@ -647,7 +650,24 @@
             </form>
 
             <h2>Billing Records</h2>
-            <button class="btn-export" onclick="exportBillingExcel()">Export to Excel</button>
+            <div style="background:#1a1a1a; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; gap:15px; align-items:center; flex-wrap:wrap; border:1px solid #333;">
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:200px;">
+                    <input type="text" id="filter-company-name" placeholder=" " oninput="applyBillingFilters()">
+                    <label>Filter by Company Name</label>
+                </div>
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:150px;">
+                    <input type="date" id="filter-billing-start" placeholder=" " onchange="applyBillingFilters()">
+                    <label>Start Date</label>
+                </div>
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:150px;">
+                    <input type="date" id="filter-billing-end" placeholder=" " onchange="applyBillingFilters()">
+                    <label>End Date</label>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-primary" onclick="clearBillingFilters()" style="padding:10px 15px; background:#4b5563; border:none; border-radius:6px; color:#fff; cursor:pointer;" type="button">Clear</button>
+                    <button class="btn-export" onclick="exportBillingExcel()" style="margin:0; padding:10px 15px;" type="button">Export to Excel</button>
+                </div>
+            </div>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -666,6 +686,21 @@
                 <tbody id="billing-table-body">
                 </tbody>
             </table>
+            
+            <div style="background:#1a1a1a; padding:15px; border-radius:8px; margin-top:20px; border:1px solid #333; display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
+                <div style="flex:1; min-width:150px;">
+                    <div style="color:#888; font-size:12px; margin-bottom:5px;">Filtered Total Amount (₹)</div>
+                    <div id="billing-filtered-total" style="font-size:18px; font-weight:700; color:#D4AF37;">₹0.00</div>
+                </div>
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:200px;">
+                    <input type="number" id="billing-overall-advance" placeholder=" " oninput="calculateBillingOverallBalance()">
+                    <label>Overall Advance Given (₹)</label>
+                </div>
+                <div style="flex:1; min-width:150px;">
+                    <div style="color:#888; font-size:12px; margin-bottom:5px;">Overall Balance Due (₹)</div>
+                    <div id="billing-overall-balance" style="font-size:18px; font-weight:700; color:#f87171;">₹0.00</div>
+                </div>
+            </div>
         </div>
 
         <!-- Expenses Tab -->
@@ -704,7 +739,11 @@
                         </div>
                         <div class="form-group">
                             <input type="text" id="expense-description" placeholder=" ">
-                            <label>Description / Notes</label>
+                            <label>Company Name</label>
+                        </div>
+                        <div class="form-group">
+                            <input type="text" id="expense-gst" placeholder=" ">
+                            <label>GST NO</label>
                         </div>
                     </div>
                 </div>
@@ -723,6 +762,12 @@
                                 <option value="Aggregate">Aggregate</option>
                             </select>
                             <label>Material Type *</label>
+                        </div>
+                        <div class="form-group" id="quality-group" style="display:none;">
+                            <select id="material-quality" placeholder=" ">
+                                <option value="">Select Quality</option>
+                            </select>
+                            <label>Quality *</label>
                         </div>
                         <div class="form-group">
                             <input type="number" id="exp-quantity" step="0.01" min="0" placeholder=" ">
@@ -774,7 +819,25 @@
             <!-- Expense Records Table -->
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:36px;margin-bottom:12px;">
                 <h2 style="margin:0;">Expense Records</h2>
-                <button class="btn-export" onclick="exportExpensesExcel()">⬇ Export All to Excel</button>
+            </div>
+
+            <div style="background:#1a1a1a; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; gap:15px; align-items:center; flex-wrap:wrap; border:1px solid #333;">
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:200px;">
+                    <input type="text" id="filter-expense-category" placeholder=" " oninput="applyExpenseFilters()">
+                    <label>Filter by Category / Material</label>
+                </div>
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:150px;">
+                    <input type="date" id="filter-expense-start" placeholder=" " onchange="applyExpenseFilters()">
+                    <label>Start Date</label>
+                </div>
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:150px;">
+                    <input type="date" id="filter-expense-end" placeholder=" " onchange="applyExpenseFilters()">
+                    <label>End Date</label>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-primary" onclick="clearExpenseFilters()" style="padding:10px 15px; background:#4b5563; border:none; border-radius:6px; color:#fff; cursor:pointer;" type="button">Clear</button>
+                    <button class="btn-export" onclick="exportExpensesExcel()" style="margin:0; padding:10px 15px;" type="button">Export to Excel</button>
+                </div>
             </div>
 
             <div style="overflow-x:auto;">
@@ -783,8 +846,11 @@
                         <tr>
                             <th>#</th>
                             <th>Date</th>
+                            <th>Company Name</th>
+                            <th>GST NO</th>
                             <th>Category</th>
                             <th>Material</th>
+                            <th>Quality</th>
                             <th>Qty (T)</th>
                             <th>Rate/T (₹)</th>
                             <th>Total (₹)</th>
@@ -795,6 +861,21 @@
                     </thead>
                     <tbody id="expense-table-body"></tbody>
                 </table>
+            </div>
+            
+            <div style="background:#1a1a1a; padding:15px; border-radius:8px; margin-top:20px; border:1px solid #333; display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
+                <div style="flex:1; min-width:150px;">
+                    <div style="color:#888; font-size:12px; margin-bottom:5px;">Filtered Total Amount (₹)</div>
+                    <div id="expense-filtered-total" style="font-size:18px; font-weight:700; color:#D4AF37;">₹0.00</div>
+                </div>
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:200px;">
+                    <input type="number" id="expense-overall-advance" placeholder=" " oninput="calculateExpenseOverallBalance()">
+                    <label>Overall Advance Given (₹)</label>
+                </div>
+                <div style="flex:1; min-width:150px;">
+                    <div style="color:#888; font-size:12px; margin-bottom:5px;">Overall Balance Due (₹)</div>
+                    <div id="expense-overall-balance" style="font-size:18px; font-weight:700; color:#f87171;">₹0.00</div>
+                </div>
             </div>
         </div>
 
@@ -870,6 +951,28 @@
 
                 <!-- inline preview -->
                 <div id="company-report-preview" style="margin-top:24px;"></div>
+            </div>
+
+            <!-- ─── Overall Company Summary Report ──────────────────────────── -->
+            <div class="expense-form-section" style="margin-top:36px;border-top:2px solid #D4AF3744;padding-top:24px;">
+                <h3>📋 Overall Company Summary Report</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:16px;">Generate a complete PDF summary of <strong style="color:#D4AF37;">all companies</strong> — total deliveries, cubic meters, amount, advance, and balance for each.</p>
+                <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+                    <div class="form-group">
+                        <input type="date" id="summary-report-start" placeholder=" ">
+                        <label>Start Date (Optional)</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="summary-report-end" placeholder=" ">
+                        <label>End Date (Optional)</label>
+                    </div>
+                </div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;align-items:center;">
+                    <button class="btn-primary" onclick="previewAllCompaniesSummary()" id="summary-preview-btn">📊 Preview Summary</button>
+                    <button class="btn-pdf" style="padding:12px 24px;font-size:14px;" onclick="exportAllCompaniesPDF()" id="summary-pdf-btn">📄 Download Summary PDF</button>
+                </div>
+                <!-- inline preview -->
+                <div id="all-companies-preview" style="margin-top:24px;"></div>
             </div>
 
             <!-- ─── Expense Category Report ─────────────────────────────────── -->
@@ -976,6 +1079,206 @@
                 <div id="desc-report-preview" style="margin-top:24px;"></div>
             </div>
         </div>
+
+        <!-- Supplier Payment Summary Tab -->
+        <div class="tab-content" id="supplier-payment">
+            <h2>Supplier Payment Summary</h2>
+            <p style="color:#888;font-size:14px;margin-bottom:20px;">
+                Search suppliers, review raw material expenses, and confirm payment statements with PDF generation.
+            </p>
+
+            <div class="expense-form-section">
+                <h3>Supplier Lookup</h3>
+                <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+                    <div class="form-group">
+                        <input type="text" id="supplier-name" placeholder=" ">
+                        <label>Supplier Name *</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="supplier-start-date" placeholder=" ">
+                        <label>Start Date</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="supplier-end-date" placeholder=" ">
+                        <label>End Date</label>
+                    </div>
+                    <div class="form-group" style="display:flex;align-items:center;gap:12px;">
+                        <input type="checkbox" id="supplier-include-paid">
+                        <label for="supplier-include-paid" style="position:static;top:auto;left:auto;color:#fff;font-size:14px;">Include Paid</label>
+                    </div>
+                </div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+                    <button class="btn-primary" type="button" onclick="lookupSupplierPayment()">Search Supplier</button>
+                    <button class="btn-secondary" type="button" onclick="clearSupplierSearch()">Clear</button>
+                    <span id="supplier-status" style="font-size:13px;color:#D4AF37;"></span>
+                </div>
+            </div>
+
+            <div id="supplier-summary" style="display:none;">
+                <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;">
+                    <div class="stat-card"><h3>Supplier</h3><div class="value" id="supplier-name-value">—</div></div>
+                    <div class="stat-card"><h3>Total Amount</h3><div class="value" id="supplier-total">₹0</div></div>
+                    <div class="stat-card"><h3>Advance</h3><div class="value" id="supplier-advance">₹0</div></div>
+                    <div class="stat-card"><h3 id="supplier-balance-label">Balance</h3><div class="value" id="supplier-balance">₹0</div></div>
+                </div>
+
+                <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:20px;">
+                    <button class="btn-primary" type="button" onclick="confirmSupplierStatement()">Confirm & Generate PDF</button>
+                    <button class="btn-secondary" type="button" onclick="loadSupplierHistory()">Load History</button>
+                </div>
+
+                <div style="overflow-x:auto;margin-top:20px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Expense ID</th>
+                                <th>Material</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Delivery Date</th>
+                                <th>Advance</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="supplier-transactions"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="expense-form-section" style="margin-top:32px;">
+                <h3>Supplier Statements History</h3>
+                <div style="overflow-x:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Number</th>
+                                <th>Supplier</th>
+                                <th>Date</th>
+                                <th>Total</th>
+                                <th>Advance</th>
+                                <th>Balance / CF</th>
+                                <th>PDF</th>
+                            </tr>
+                        </thead>
+                        <tbody id="supplier-history-body">
+                            <tr><td colspan="7" style="color:#888;padding:16px;">No history loaded yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Client Billing Summary Tab -->
+        <div class="tab-content" id="client-billing">
+            <h2>Client Billing Summary</h2>
+            <p style="color:#888;font-size:14px;margin-bottom:20px;">
+                Search a client, review unbilled loads, deduct advances, then confirm to generate a settled invoice PDF.
+            </p>
+
+            <div class="expense-form-section">
+                <h3>Client Lookup</h3>
+                <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+                    <div class="form-group" style="grid-column:span 2;">
+                        <input type="text" id="cbs-client-name" placeholder=" " onkeydown="if(event.key==='Enter'){event.preventDefault();lookupClientBilling();}">
+                        <label>Client Name *</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="cbs-start-date" placeholder=" ">
+                        <label>Start Date (Optional)</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="date" id="cbs-end-date" placeholder=" ">
+                        <label>End Date (Optional)</label>
+                    </div>
+                </div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;align-items:center;">
+                    <button class="btn-primary" type="button" onclick="lookupClientBilling()">Search Client</button>
+                    <button class="btn-secondary" type="button" onclick="clearClientBilling()">Clear</button>
+                    <span id="cbs-status" style="font-size:13px;color:#D4AF37;"></span>
+                </div>
+            </div>
+
+            <div id="cbs-results" style="display:none;margin-top:24px;">
+                <div id="cbs-summary-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px;"></div>
+
+                <div class="expense-form-section" style="margin-bottom:20px;">
+                    <h3 style="margin-top:0;">Deduct Advance</h3>
+                    <p style="color:#888;font-size:13px;margin-bottom:14px;">
+                        Enter the advance amount to deduct from this bill, then click <strong style="color:#D4AF37;">Update Balance</strong>.
+                        If advance is greater than total, the leftover is shown as Advance Carried Forward.
+                    </p>
+                    <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:0;">
+                        <div class="form-group">
+                            <input type="number" id="cbs-advance-input" min="0" step="0.01" placeholder=" " oninput="previewClientAdvanceDeduction()">
+                            <label>Advance Amount to Deduct (₹)</label>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:8px;">
+                            <button class="btn-primary" type="button" onclick="applyClientAdvanceDeduction()">Update Balance</button>
+                            <button class="btn-secondary" type="button" onclick="resetClientAdvanceDeduction()">Reset to Recorded</button>
+                        </div>
+                    </div>
+                    <div id="cbs-deduct-preview" style="margin-top:12px;font-size:13px;color:#D4AF37;"></div>
+                </div>
+
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+                    <h3 style="color:#D4AF37;margin:0;" id="cbs-client-heading">Loads</h3>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <button class="btn-pdf" type="button" id="cbs-confirm-btn" style="padding:12px 22px;font-size:14px;" onclick="confirmClientBilling()">Confirm &amp; Generate Bill</button>
+                    </div>
+                </div>
+
+                <div style="overflow-x:auto;">
+                    <table class="data-table" id="cbs-loads-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>M#</th>
+                                <th>Delivery Date</th>
+                                <th>Qty (m³)</th>
+                                <th>Rate</th>
+                                <th>Price (₹)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cbs-loads-body"></tbody>
+                        <tfoot>
+                            <tr style="background:#1a1a1a;border-top:2px solid #D4AF37;">
+                                <td colspan="5" style="padding:10px;font-weight:700;color:#D4AF37;text-align:right;">Grand Total →</td>
+                                <td style="padding:10px;font-weight:700;color:#D4AF37;" id="cbs-table-total">₹0.00</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <div id="cbs-edge-note" style="margin-top:14px;font-size:13px;color:#888;"></div>
+            </div>
+
+            <div class="expense-form-section" style="margin-top:36px;border-top:2px solid #D4AF3744;padding-top:24px;">
+                <h3>Previous Client Bills</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:14px;">Saved invoices linked to this client (or all clients if search is empty).</p>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+                    <button class="btn-secondary" type="button" onclick="loadClientBillingHistory()">Refresh History</button>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Invoice #</th>
+                                <th>Client</th>
+                                <th>Bill Date</th>
+                                <th>Total</th>
+                                <th>Advance</th>
+                                <th>Balance / CF</th>
+                                <th>PDF</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cbs-history-body">
+                            <tr><td colspan="7" style="color:#888;padding:16px;">No history loaded yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ═══ Edit Bill Modal ═══════════════════════════════════════════════ -->
@@ -1016,6 +1319,7 @@
                 <div class="form-group">
                     <select id="edit-grade" required>
                         <option value="">Select Grade</option>
+                        <option value="M10">M10</option>
                         <option value="M15">M15</option>
                         <option value="M20">M20</option>
                         <option value="M25">M25</option>
@@ -1087,7 +1391,11 @@
                     </div>
                     <div class="form-group">
                         <input type="text" id="edit-expense-description" placeholder=" ">
-                        <label>Description / Notes</label>
+                        <label>Company Name</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" id="edit-expense-gst" placeholder=" ">
+                        <label>GST NO</label>
                     </div>
                 </div>
             </div>
@@ -1104,6 +1412,12 @@
                             <option value="Aggregate">Aggregate</option>
                         </select>
                         <label>Material Type *</label>
+                    </div>
+                    <div class="form-group" id="edit-quality-group" style="display:none;">
+                        <select id="edit-material-quality" placeholder=" ">
+                            <option value="">Select Quality</option>
+                        </select>
+                        <label>Quality *</label>
                     </div>
                     <div class="form-group">
                         <input type="number" id="edit-exp-quantity" step="0.01" min="0" placeholder=" ">
@@ -1252,6 +1566,35 @@
         const expRate       = document.getElementById('exp-rate');
         const expAdvance    = document.getElementById('exp-advance');
 
+        // Quality options map
+        const QUALITY_OPTIONS = {
+            'Jelly Stones': ['12mm', '20mm'],
+            'M-Sand':       ['msand', 'dust']
+        };
+
+        function updateQualityDropdown(materialSelectId, qualityGroupId, qualitySelectId) {
+            const matVal = document.getElementById(materialSelectId).value;
+            const grp    = document.getElementById(qualityGroupId);
+            const sel    = document.getElementById(qualitySelectId);
+            const opts   = QUALITY_OPTIONS[matVal];
+            if (opts) {
+                sel.innerHTML = '<option value="">Select Quality</option>' +
+                    opts.map(o => `<option value="${o}">${o}</option>`).join('');
+                grp.style.display = '';
+            } else {
+                sel.innerHTML = '<option value="">Select Quality</option>';
+                grp.style.display = 'none';
+            }
+        }
+
+        document.getElementById('material-type').addEventListener('change', () => {
+            updateQualityDropdown('material-type', 'quality-group', 'material-quality');
+        });
+
+        document.getElementById('edit-material-type').addEventListener('change', () => {
+            updateQualityDropdown('edit-material-type', 'edit-quality-group', 'edit-material-quality');
+        });
+
         // Toggle Raw Material section based on category
         expCat.addEventListener('change', () => {
             const isRaw = expCat.value === 'Raw Material';
@@ -1286,25 +1629,33 @@
             const category    = expCat.value;
             const date        = document.getElementById('expense-date').value;
             const description = document.getElementById('expense-description').value;
+            const gst_no      = document.getElementById('expense-gst').value;
             const isRaw       = category === 'Raw Material';
 
-            let data = { category, date, description };
+            let data = { category, date, description, gst_no };
 
             if (isRaw) {
                 const materialType = document.getElementById('material-type').value;
+                const quality      = document.getElementById('material-quality').value;
                 const quantity     = parseFloat(expQty.value)     || 0;
                 const rate         = parseFloat(expRate.value)    || 0;
                 const advance      = parseFloat(expAdvance.value) || 0;
                 const total        = quantity * rate;
                 const balance      = total - advance;
+                const needsQuality = QUALITY_OPTIONS.hasOwnProperty(materialType);
 
                 if (!materialType || !quantity || !rate) {
                     showToast('Please fill in material type, quantity, and rate.', 'error');
                     return;
                 }
+                if (needsQuality && !quality) {
+                    showToast('Please select a quality for this material.', 'error');
+                    return;
+                }
 
                 data = { ...data,
                     material_type: materialType,
+                    quality: quality || '',
                     quantity, rate_per_ton: rate,
                     total_amount: total,
                     advance_amount: advance,
@@ -1464,13 +1815,37 @@
                 const json = await res.json();
                 let recs   = json.data || [];
 
-                // Filter by company name keyword (robust multi-word match)
-                const searchTerms = keyword.split(/\s+/).filter(t => t);
-                recs = recs.filter(r => {
-                    const comp = (r.company_name || '').toLowerCase();
-                    return searchTerms.every(term => comp.includes(term));
-                });
-                
+                // Resolve a typo to one company, then return only that company's records.
+                // Matching each word independently previously mixed similarly named customers.
+                function levenshtein(a, b) {
+                    const m = a.length, n = b.length;
+                    const dp = Array.from({length: m+1}, (_, i) => Array.from({length: n+1}, (_, j) => i===0?j:j===0?i:0));
+                    for (let i=1;i<=m;i++) for (let j=1;j<=n;j++)
+                        dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+                    return dp[m][n];
+                }
+                function normaliseCompanyName(value) {
+                    return (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                }
+                function resolveCompanyName(search, records) {
+                    const wanted = normaliseCompanyName(search);
+                    const names = [...new Set(records.map(r => r.company_name || '').filter(Boolean))];
+                    let bestName = '';
+                    let bestScore = Infinity;
+                    names.forEach(name => {
+                        const candidate = normaliseCompanyName(name);
+                        if (candidate === wanted) { bestName = name; bestScore = 0; return; }
+                        const distance = levenshtein(wanted, candidate);
+                        const score = distance / Math.max(wanted.length, candidate.length, 1);
+                        if (score < bestScore) { bestName = name; bestScore = score; }
+                    });
+                    return bestScore <= 0.3 ? bestName : '';
+                }
+                const matchedCompany = resolveCompanyName(keyword, recs);
+                recs = matchedCompany
+                    ? recs.filter(r => normaliseCompanyName(r.company_name) === normaliseCompanyName(matchedCompany))
+                    : [];
+
                 // Date range
                 if (startDate) recs = recs.filter(r => r.date >= startDate);
                 if (endDate)   recs = recs.filter(r => r.date <= endDate);
@@ -1516,7 +1891,7 @@
                 <div style="background:#141414;border:1px solid #D4AF3744;border-radius:10px;padding:20px;margin-top:8px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
                         <div>
-                            <div style="font-size:15px;font-weight:700;color:#D4AF37;">🔍 Results for: "${keyword}"</div>
+                            <div style="font-size:15px;font-weight:700;color:#D4AF37;">🔍 Results for: "${matchedCompany || keyword}"</div>
                             <div style="font-size:12px;color:#888;margin-top:2px;">📅 ${period} &nbsp;|&nbsp; ${recs.length} record(s)</div>
                         </div>
                         <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -1579,6 +1954,120 @@
             window.open(url, '_blank');
         }
 
+        // ── Overall Company Summary ─────────────────────────────────────────
+        async function previewAllCompaniesSummary() {
+            const startDate = document.getElementById('summary-report-start').value;
+            const endDate   = document.getElementById('summary-report-end').value;
+            const preview   = document.getElementById('all-companies-preview');
+            preview.innerHTML = '<p style="color:#D4AF37;">⏳ Loading all records…</p>';
+            try {
+                const res  = await fetch('/api/manual-billing');
+                const json = await res.json();
+                let recs   = json.data || [];
+                if (startDate) recs = recs.filter(r => r.date >= startDate);
+                if (endDate)   recs = recs.filter(r => r.date <= endDate);
+
+                // Group by normalised company name (trimmed, uppercase)
+                const groups = {};
+                recs.forEach(r => {
+                    const key = (r.company_name || '—').trim().toUpperCase();
+                    if (!groups[key]) groups[key] = {name: key, count:0, m3:0, amount:0, advance:0, balance:0};
+                    groups[key].count++;
+                    groups[key].m3      += parseFloat(r.cubic_meters    || 0);
+                    groups[key].amount  += parseFloat(r.total_amount    || 0);
+                    groups[key].advance += parseFloat(r.advance_amount  || 0);
+                    groups[key].balance += parseFloat(r.balance_amount  || 0);
+                });
+
+                const sorted = Object.values(groups).sort((a,b) => a.name.localeCompare(b.name));
+                if (!sorted.length) { preview.innerHTML = '<p style="color:#f87171;">⚠️ No records found.</p>'; return; }
+
+                const totM3  = sorted.reduce((s,g)=>s+g.m3,0);
+                const totAmt = sorted.reduce((s,g)=>s+g.amount,0);
+                const totAdv = sorted.reduce((s,g)=>s+g.advance,0);
+                const totBal = sorted.reduce((s,g)=>s+g.balance,0);
+                const period = (startDate||endDate) ? `${startDate||'Start'} → ${endDate||'Today'}` : 'All Time';
+
+                const fmt = n => '₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2});
+
+                const rows = sorted.map((g,i) => `<tr style="background:${i%2===0?'#1e1e1e':'#252525'}">
+                    <td style="padding:7px 10px;color:#aaa;">${i+1}</td>
+                    <td style="padding:7px 10px;font-weight:600;color:#fff;">${g.name}</td>
+                    <td style="padding:7px 10px;text-align:center;color:#D4AF37;">${g.count}</td>
+                    <td style="padding:7px 10px;text-align:right;color:#D4AF37;">${g.m3.toFixed(2)}</td>
+                    <td style="padding:7px 10px;text-align:right;font-weight:700;color:#fff;">${fmt(g.amount)}</td>
+                    <td style="padding:7px 10px;text-align:right;color:#4ade80;">${fmt(g.advance)}</td>
+                    <td style="padding:7px 10px;text-align:right;color:#f87171;">${fmt(g.balance)}</td>
+                </tr>`).join('');
+
+                preview.innerHTML = `
+                <div style="background:#141414;border:1px solid #D4AF3744;border-radius:10px;padding:20px;margin-top:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+                        <div>
+                            <div style="font-size:15px;font-weight:700;color:#D4AF37;">📋 All Companies Summary</div>
+                            <div style="font-size:12px;color:#888;margin-top:2px;">📅 ${period} &nbsp;|&nbsp; ${sorted.length} companies &nbsp;|&nbsp; ${recs.length} records</div>
+                        </div>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <div style="background:#222;border:1px solid #D4AF3744;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL M³</div>
+                                <div style="font-size:16px;font-weight:700;color:#D4AF37;">${totM3.toFixed(2)}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #D4AF3744;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL AMOUNT</div>
+                                <div style="font-size:16px;font-weight:700;color:#D4AF37;">${fmt(totAmt)}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #4ade8044;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL ADVANCE</div>
+                                <div style="font-size:16px;font-weight:700;color:#4ade80;">${fmt(totAdv)}</div>
+                            </div>
+                            <div style="background:#222;border:1px solid #f8717144;border-radius:8px;padding:10px 18px;text-align:center;">
+                                <div style="font-size:11px;color:#888;margin-bottom:2px;">TOTAL BALANCE</div>
+                                <div style="font-size:16px;font-weight:700;color:#f87171;">${fmt(totBal)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead>
+                                <tr style="background:#D4AF37;">
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">#</th>
+                                    <th style="padding:8px 10px;text-align:left;color:#1a1a1a;">Company Name</th>
+                                    <th style="padding:8px 10px;text-align:center;color:#1a1a1a;">Deliveries</th>
+                                    <th style="padding:8px 10px;text-align:right;color:#1a1a1a;">Total M³</th>
+                                    <th style="padding:8px 10px;text-align:right;color:#1a1a1a;">Total Amount (₹)</th>
+                                    <th style="padding:8px 10px;text-align:right;color:#1a1a1a;">Advance (₹)</th>
+                                    <th style="padding:8px 10px;text-align:right;color:#1a1a1a;">Balance (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                            <tfoot>
+                                <tr style="background:#1a1a1a;border-top:2px solid #D4AF37;">
+                                    <td colspan="2" style="padding:10px;font-weight:700;color:#D4AF37;text-align:right;">GRAND TOTALS →</td>
+                                    <td style="padding:10px;font-weight:700;color:#D4AF37;text-align:center;">${recs.length}</td>
+                                    <td style="padding:10px;font-weight:700;color:#D4AF37;text-align:right;">${totM3.toFixed(2)}</td>
+                                    <td style="padding:10px;font-weight:700;color:#D4AF37;text-align:right;">${fmt(totAmt)}</td>
+                                    <td style="padding:10px;font-weight:700;color:#4ade80;text-align:right;">${fmt(totAdv)}</td>
+                                    <td style="padding:10px;font-weight:700;color:#f87171;text-align:right;">${fmt(totBal)}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>`;
+            } catch(err) {
+                preview.innerHTML = `<p style="color:#f87171;">⚠️ Error: ${err.message}</p>`;
+            }
+        }
+
+        function exportAllCompaniesPDF() {
+            const startDate = document.getElementById('summary-report-start').value;
+            const endDate   = document.getElementById('summary-report-end').value;
+            let url = '/api/reports/all-companies-summary/pdf';
+            const params = [];
+            if (startDate) params.push('start=' + startDate);
+            if (endDate)   params.push('end='   + endDate);
+            if (params.length) url += '?' + params.join('&');
+            window.open(url, '_blank');
+        }
 
         function toggleCatReportMaterial() {
             const cat = document.getElementById('cat-report-category').value;
@@ -1900,38 +2389,82 @@
                 const result = await response.json();
                 if (result.success) {
                     _billingCache = result.data;
-                    const tbody = document.getElementById('billing-table-body');
-                    tbody.innerHTML = '';
-                    let totalVolume = 0;
-                    result.data.forEach(record => {
-                        totalVolume += record.cubic_meters || 0;
-                        tbody.innerHTML += `
-                            <tr>
-                                <td>${record.id}</td>
-                                <td>${record.company_name}</td>
-                                <td>${record.date}</td>
-                                <td>${record.vehicle_number}</td>
-                                <td>${record.grade}</td>
-                                <td>${record.cubic_meters}</td>
-                                <td>₹${(record.total_amount || 0).toFixed(2)}</td>
-                                <td>₹${(record.advance_amount || 0).toFixed(2)}</td>
-                                <td>₹${(record.balance_amount || 0).toFixed(2)}</td>
-                                <td>
-                                    <div class="action-buttons">
-                                        <button class="btn-small btn-success" onclick="downloadBillPDF('${record.id}')">PDF</button>
-                                        <button class="btn-small" style="background:#f59e0b;color:#1a1a1a;border:none;border-radius:4px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;" onclick="openEditBill('${record.id}')">Edit</button>
-                                        <button class="btn-small btn-danger" onclick="deleteBill('${record.id}')">Delete</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `;
-                    });
-                    document.getElementById('total-bills').textContent = result.data.length;
-                    document.getElementById('total-volume').textContent = totalVolume.toFixed(1);
+                    applyBillingFilters();
                 }
             } catch (error) {
                 showToast('Error loading billing records', 'error');
             }
+        }
+
+        function renderBillingTable(data) {
+            const tbody = document.getElementById('billing-table-body');
+            tbody.innerHTML = '';
+            let totalVolume = 0;
+            let totalAmt = 0;
+            data.forEach(record => {
+                totalVolume += record.cubic_meters || 0;
+                totalAmt += parseFloat(record.total_amount || 0);
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${record.id}</td>
+                        <td>${record.company_name}</td>
+                        <td>${record.date}</td>
+                        <td>${record.vehicle_number}</td>
+                        <td>${record.grade}</td>
+                        <td>${record.cubic_meters}</td>
+                        <td>₹${(record.total_amount || 0).toFixed(2)}</td>
+                        <td>₹${(record.advance_amount || 0).toFixed(2)}</td>
+                        <td>₹${(record.balance_amount || 0).toFixed(2)}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-small btn-success" onclick="downloadBillPDF('${record.id}')">PDF</button>
+                                <button class="btn-small" style="background:#f59e0b;color:#1a1a1a;border:none;border-radius:4px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;" onclick="openEditBill('${record.id}')">Edit</button>
+                                <button class="btn-small btn-danger" onclick="deleteBill('${record.id}')">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            document.getElementById('total-bills').textContent = data.length;
+            document.getElementById('total-volume').textContent = totalVolume.toFixed(1);
+            
+            document.getElementById('billing-filtered-total').textContent = '₹' + totalAmt.toLocaleString('en-IN', {minimumFractionDigits:2});
+            document.getElementById('billing-filtered-total').dataset.val = totalAmt;
+            calculateBillingOverallBalance();
+        }
+
+        function calculateBillingOverallBalance() {
+            const total = parseFloat(document.getElementById('billing-filtered-total').dataset.val || 0);
+            const adv = parseFloat(document.getElementById('billing-overall-advance').value || 0);
+            const bal = total - adv;
+            document.getElementById('billing-overall-balance').textContent = '₹' + bal.toLocaleString('en-IN', {minimumFractionDigits:2});
+            document.getElementById('billing-overall-balance').style.color = bal >= 0 ? '#f87171' : '#4ade80';
+        }
+
+        function applyBillingFilters() {
+            let filtered = _billingCache;
+            const company = document.getElementById('filter-company-name').value.toLowerCase();
+            const startDate = document.getElementById('filter-billing-start').value;
+            const endDate = document.getElementById('filter-billing-end').value;
+
+            if (company) {
+                filtered = filtered.filter(r => (r.company_name || '').toLowerCase().includes(company));
+            }
+            if (startDate) {
+                filtered = filtered.filter(r => r.date >= startDate);
+            }
+            if (endDate) {
+                filtered = filtered.filter(r => r.date <= endDate);
+            }
+            
+            renderBillingTable(filtered);
+        }
+
+        function clearBillingFilters() {
+            document.getElementById('filter-company-name').value = '';
+            document.getElementById('filter-billing-start').value = '';
+            document.getElementById('filter-billing-end').value = '';
+            applyBillingFilters();
         }
 
         function openEditBill(id) {
@@ -2012,56 +2545,103 @@
                 const result   = await response.json();
                 if (!result.success) return;
                 _expenseCache = result.data;
-
-                const tbody = document.getElementById('expense-table-body');
-                tbody.innerHTML = '';
-
-                let totalAmt = 0, monthlyAmt = 0, rawAmt = 0, otherAmt = 0;
-                const now = new Date();
-
-                result.data.forEach((rec, i) => {
-                    const amt     = parseFloat(rec.total_amount || rec.amount || 0);
-                    const advance = parseFloat(rec.advance_amount || 0);
-                    const balance = parseFloat(rec.balance_amount || amt);
-                    totalAmt += amt;
-
-                    const d = new Date(rec.date);
-                    if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear())
-                        monthlyAmt += amt;
-
-                    if (rec.category === 'Raw Material') rawAmt += amt;
-                    else otherAmt += amt;
-
-                    const isRaw = rec.category === 'Raw Material';
-                    tbody.innerHTML += `
-                    <tr>
-                        <td>${i + 1}</td>
-                        <td>${rec.date || '—'}</td>
-                        <td><span style="background:#D4AF3722;color:#D4AF37;padding:2px 8px;border-radius:4px;font-size:12px;">${rec.category}</span></td>
-                        <td>${rec.material_type || '—'}</td>
-                        <td>${isRaw ? (rec.quantity || '—') : '—'}</td>
-                        <td>${isRaw ? '₹' + parseFloat(rec.rate_per_ton || 0).toFixed(2) : '—'}</td>
-                        <td style="font-weight:600;">₹${amt.toFixed(2)}</td>
-                        <td>₹${advance.toFixed(2)}</td>
-                        <td style="color:#4ade80;font-weight:600;">₹${balance.toFixed(2)}</td>
-                        <td>
-                            <div class="expense-action-buttons">
-                                ${isRaw ? `<button class="btn-pdf" onclick="downloadExpensePDF('${rec.id}')">📄 PDF</button>` : ''}
-                                <button class="btn-xls" onclick="downloadExpenseExcel('${rec.id}')">📊 XLS</button>
-                                <button class="btn-edit" onclick="openEditExpense('${rec.id}')" title="Edit">✏️</button>
-                                <button class="btn-del" onclick="deleteExpense('${rec.id}')">🗑</button>
-                            </div>
-                        </td>
-                    </tr>`;
-                });
-
-                document.getElementById('total-expenses').textContent    = '₹' + totalAmt.toFixed(2);
-                document.getElementById('monthly-expenses').textContent  = '₹' + monthlyAmt.toFixed(2);
-                document.getElementById('stat-raw-material').textContent = '₹' + rawAmt.toFixed(2);
-                document.getElementById('stat-other').textContent        = '₹' + otherAmt.toFixed(2);
+                applyExpenseFilters();
             } catch (err) {
                 showToast('Error loading expense records', 'error');
             }
+        }
+
+        function renderExpenseTable(data) {
+            const tbody = document.getElementById('expense-table-body');
+            tbody.innerHTML = '';
+
+            let totalAmt = 0, monthlyAmt = 0, rawAmt = 0, otherAmt = 0;
+            const now = new Date();
+
+            data.forEach((rec, i) => {
+                const amt     = parseFloat(rec.total_amount || rec.amount || 0);
+                const advance = parseFloat(rec.advance_amount || 0);
+                const balance = parseFloat(rec.balance_amount || amt);
+                totalAmt += amt;
+
+                const d = new Date(rec.date);
+                if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear())
+                    monthlyAmt += amt;
+
+                if (rec.category === 'Raw Material') rawAmt += amt;
+                else otherAmt += amt;
+
+                const isRaw = rec.category === 'Raw Material';
+                tbody.innerHTML += `
+                <tr>
+                    <td>${i + 1}</td>
+                    <td>${rec.date || '—'}</td>
+                    <td>${rec.description || '—'}</td>
+                    <td>${rec.gst_no || '—'}</td>
+                    <td><span style="background:#D4AF3722;color:#D4AF37;padding:2px 8px;border-radius:4px;font-size:12px;">${rec.category}</span></td>
+                    <td>${rec.material_type || '—'}</td>
+                    <td>${(isRaw && rec.quality) ? `<span style="background:#3b82f622;color:#60a5fa;padding:2px 8px;border-radius:4px;font-size:12px;">${rec.quality}</span>` : '—'}</td>
+                    <td>${isRaw ? (rec.quantity || '—') : '—'}</td>
+                    <td>${isRaw ? '₹' + parseFloat(rec.rate_per_ton || 0).toFixed(2) : '—'}</td>
+                    <td style="font-weight:600;">₹${amt.toFixed(2)}</td>
+                    <td>₹${advance.toFixed(2)}</td>
+                    <td style="color:#4ade80;font-weight:600;">₹${balance.toFixed(2)}</td>
+                    <td>
+                        <div class="expense-action-buttons">
+                            ${isRaw ? `<button class="btn-pdf" onclick="downloadExpensePDF('${rec.id}')">📄 PDF</button>` : ''}
+                            <button class="btn-xls" onclick="downloadExpenseExcel('${rec.id}')">📊 XLS</button>
+                            <button class="btn-edit" onclick="openEditExpense('${rec.id}')" title="Edit">✏️</button>
+                            <button class="btn-del" onclick="deleteExpense('${rec.id}')">🗑</button>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+
+            document.getElementById('total-expenses').textContent    = '₹' + totalAmt.toFixed(2);
+            document.getElementById('monthly-expenses').textContent  = '₹' + monthlyAmt.toFixed(2);
+            document.getElementById('stat-raw-material').textContent = '₹' + rawAmt.toFixed(2);
+            document.getElementById('stat-other').textContent        = '₹' + otherAmt.toFixed(2);
+
+            document.getElementById('expense-filtered-total').textContent = '₹' + totalAmt.toLocaleString('en-IN', {minimumFractionDigits: 2});
+            document.getElementById('expense-filtered-total').dataset.val = totalAmt;
+            calculateExpenseOverallBalance();
+        }
+
+        function calculateExpenseOverallBalance() {
+            const total = parseFloat(document.getElementById('expense-filtered-total').dataset.val || 0);
+            const adv = parseFloat(document.getElementById('expense-overall-advance').value || 0);
+            const bal = total - adv;
+            document.getElementById('expense-overall-balance').textContent = '₹' + bal.toLocaleString('en-IN', {minimumFractionDigits: 2});
+            document.getElementById('expense-overall-balance').style.color = bal >= 0 ? '#f87171' : '#4ade80';
+        }
+
+        function applyExpenseFilters() {
+            let filtered = _expenseCache;
+            const categoryMatch = document.getElementById('filter-expense-category').value.toLowerCase();
+            const startDate = document.getElementById('filter-expense-start').value;
+            const endDate = document.getElementById('filter-expense-end').value;
+
+            if (categoryMatch) {
+                filtered = filtered.filter(r => (
+                    (r.category || '').toLowerCase().includes(categoryMatch) || 
+                    (r.material_type || '').toLowerCase().includes(categoryMatch)
+                ));
+            }
+            if (startDate) {
+                filtered = filtered.filter(r => r.date >= startDate);
+            }
+            if (endDate) {
+                filtered = filtered.filter(r => r.date <= endDate);
+            }
+            
+            renderExpenseTable(filtered);
+        }
+
+        function clearExpenseFilters() {
+            document.getElementById('filter-expense-category').value = '';
+            document.getElementById('filter-expense-start').value = '';
+            document.getElementById('filter-expense-end').value = '';
+            applyExpenseFilters();
         }
 
         function openEditExpense(id) {
@@ -2071,11 +2651,15 @@
             document.getElementById('edit-expense-category').value    = rec.category || '';
             document.getElementById('edit-expense-date').value        = rec.date || '';
             document.getElementById('edit-expense-description').value = rec.description || '';
+            document.getElementById('edit-expense-gst').value         = rec.gst_no || '';
             const isRaw = rec.category === 'Raw Material';
             document.getElementById('edit-raw-material-section').classList.toggle('visible', isRaw);
             document.getElementById('edit-other-expense-section').style.display = isRaw ? 'none' : 'block';
             if (isRaw) {
                 document.getElementById('edit-material-type').value  = rec.material_type || '';
+                // Update quality dropdown based on material type, then set saved value
+                updateQualityDropdown('edit-material-type', 'edit-quality-group', 'edit-material-quality');
+                document.getElementById('edit-material-quality').value = rec.quality || '';
                 document.getElementById('edit-exp-quantity').value   = rec.quantity || '';
                 document.getElementById('edit-exp-rate').value       = rec.rate_per_ton || '';
                 document.getElementById('edit-exp-advance').value    = rec.advance_amount || 0;
@@ -2112,20 +2696,24 @@
             const category = document.getElementById('edit-expense-category').value;
             const date     = document.getElementById('edit-expense-date').value;
             const description = document.getElementById('edit-expense-description').value;
+            const gst_no   = document.getElementById('edit-expense-gst').value;
             const isRaw    = category === 'Raw Material';
 
             if (!category || !date) { showToast('Category and Date are required.', 'error'); return; }
 
-            let data = { category, date, description };
+            let data = { category, date, description, gst_no };
 
             if (isRaw) {
                 const materialType = document.getElementById('edit-material-type').value;
+                const quality      = document.getElementById('edit-material-quality').value;
                 const quantity     = parseFloat(document.getElementById('edit-exp-quantity').value) || 0;
                 const rate         = parseFloat(document.getElementById('edit-exp-rate').value) || 0;
                 const advance      = parseFloat(document.getElementById('edit-exp-advance').value) || 0;
                 const total        = quantity * rate;
+                const needsQuality = QUALITY_OPTIONS.hasOwnProperty(materialType);
                 if (!materialType || !quantity || !rate) { showToast('Fill in material, quantity, and rate.', 'error'); return; }
-                data = { ...data, material_type: materialType, quantity, rate_per_ton: rate,
+                if (needsQuality && !quality) { showToast('Please select a quality for this material.', 'error'); return; }
+                data = { ...data, material_type: materialType, quality: quality || '', quantity, rate_per_ton: rate,
                          total_amount: total, advance_amount: advance, balance_amount: total - advance, amount: total };
             } else {
                 const amount = parseFloat(document.getElementById('edit-expense-amount').value) || 0;
@@ -2150,10 +2738,423 @@
             } catch { showToast('Error updating expense', 'error'); }
         }
 
+        // ═══ CLIENT BILLING SUMMARY ═══════════════════════════════════════
+        let cbsCurrentSummary = null;
+        let cbsRecordedAdvance = 0;
+
+        function cbsFmt(n) {
+            return '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function cbsRecalcFromAdvance(total, advance) {
+            total = Number(total) || 0;
+            advance = Math.max(0, Number(advance) || 0);
+            if (advance > total) {
+                return {
+                    advance_amount: advance,
+                    advance_deducted: total,
+                    balance_amount: 0,
+                    advance_carried_forward: Math.round((advance - total) * 100) / 100,
+                    display_balance: Math.round((advance - total) * 100) / 100,
+                    balance_label: 'Advance Carried Forward'
+                };
+            }
+            return {
+                advance_amount: advance,
+                advance_deducted: advance,
+                balance_amount: Math.round((total - advance) * 100) / 100,
+                advance_carried_forward: 0,
+                display_balance: Math.round((total - advance) * 100) / 100,
+                balance_label: 'Balance Amount'
+            };
+        }
+
+        function clearClientBilling() {
+            document.getElementById('cbs-client-name').value = '';
+            document.getElementById('cbs-start-date').value = '';
+            document.getElementById('cbs-end-date').value = '';
+            document.getElementById('cbs-results').style.display = 'none';
+            document.getElementById('cbs-status').textContent = '';
+            document.getElementById('cbs-edge-note').textContent = '';
+            const advInput = document.getElementById('cbs-advance-input');
+            if (advInput) advInput.value = '';
+            const preview = document.getElementById('cbs-deduct-preview');
+            if (preview) preview.textContent = '';
+            cbsCurrentSummary = null;
+            cbsRecordedAdvance = 0;
+        }
+
+        async function lookupClientBilling() {
+            const client = (document.getElementById('cbs-client-name').value || '').trim();
+            const start = document.getElementById('cbs-start-date').value;
+            const end = document.getElementById('cbs-end-date').value;
+            const statusEl = document.getElementById('cbs-status');
+            const results = document.getElementById('cbs-results');
+
+            if (!client) {
+                showToast('Please enter a client name.', 'error');
+                return;
+            }
+
+            statusEl.textContent = 'Searching…';
+            results.style.display = 'none';
+            cbsCurrentSummary = null;
+
+            try {
+                let url = '/api/client-billing-summary?client=' + encodeURIComponent(client);
+                if (start) url += '&start=' + encodeURIComponent(start);
+                if (end) url += '&end=' + encodeURIComponent(end);
+                const res = await fetch(url);
+                const data = await res.json();
+                if (!res.ok) {
+                    showToast(data.error || 'Lookup failed', 'error');
+                    statusEl.textContent = '';
+                    return;
+                }
+                if (!data.matched) {
+                    statusEl.textContent = data.message || 'No match';
+                    showToast(data.message || 'Client not found', 'error');
+                    return;
+                }
+
+                cbsCurrentSummary = data;
+                cbsRecordedAdvance = Number(data.advance_amount) || 0;
+                document.getElementById('cbs-advance-input').value = cbsRecordedAdvance;
+                statusEl.textContent = `Matched: ${data.client_name} (${data.load_count} unbilled load${data.load_count === 1 ? '' : 's'})`;
+                renderClientBillingSummary(data);
+                results.style.display = 'block';
+                previewClientAdvanceDeduction();
+                loadClientBillingHistory();
+            } catch (err) {
+                statusEl.textContent = '';
+                showToast('Error: ' + err.message, 'error');
+            }
+        }
+
+        function previewClientAdvanceDeduction() {
+            if (!cbsCurrentSummary) return;
+            const total = Number(cbsCurrentSummary.total_amount) || 0;
+            const advance = parseFloat(document.getElementById('cbs-advance-input').value);
+            const adv = Number.isFinite(advance) ? Math.max(0, advance) : 0;
+            const calc = cbsRecalcFromAdvance(total, adv);
+            const el = document.getElementById('cbs-deduct-preview');
+            if (calc.advance_carried_forward > 0) {
+                el.innerHTML = `Preview → Total ${cbsFmt(total)} − Advance ${cbsFmt(adv)} = <strong style="color:#fbbf24;">Advance Carried Forward ${cbsFmt(calc.advance_carried_forward)}</strong>`;
+            } else {
+                el.innerHTML = `Preview → Total ${cbsFmt(total)} − Advance ${cbsFmt(adv)} = <strong style="color:#f87171;">Balance ${cbsFmt(calc.balance_amount)}</strong>`;
+            }
+        }
+
+        function applyClientAdvanceDeduction() {
+            if (!cbsCurrentSummary) {
+                showToast('Search for a client first.', 'error');
+                return;
+            }
+            const advance = parseFloat(document.getElementById('cbs-advance-input').value);
+            if (!Number.isFinite(advance) || advance < 0) {
+                showToast('Enter a valid advance amount (0 or more).', 'error');
+                return;
+            }
+            const calc = cbsRecalcFromAdvance(cbsCurrentSummary.total_amount, advance);
+            Object.assign(cbsCurrentSummary, calc);
+            cbsCurrentSummary.advance_override = true;
+            renderClientBillingSummary(cbsCurrentSummary);
+            previewClientAdvanceDeduction();
+            showToast('Balance updated with advance deduction.', 'success');
+        }
+
+        function resetClientAdvanceDeduction() {
+            if (!cbsCurrentSummary) return;
+            document.getElementById('cbs-advance-input').value = cbsRecordedAdvance;
+            const calc = cbsRecalcFromAdvance(cbsCurrentSummary.total_amount, cbsRecordedAdvance);
+            Object.assign(cbsCurrentSummary, calc);
+            cbsCurrentSummary.advance_override = false;
+            renderClientBillingSummary(cbsCurrentSummary);
+            previewClientAdvanceDeduction();
+            showToast('Reset to recorded advance from loads.', 'success');
+        }
+
+        function renderClientBillingSummary(data) {
+            const cards = document.getElementById('cbs-summary-cards');
+            const balColor = data.advance_carried_forward > 0 ? '#fbbf24' : '#f87171';
+            cards.innerHTML = `
+                <div class="stat-card">
+                    <h3>Total Amount</h3>
+                    <div class="value" style="font-size:22px;">${cbsFmt(data.total_amount)}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Advance Amount</h3>
+                    <div class="value" style="font-size:22px;color:#4ade80;">${cbsFmt(data.advance_amount)}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>${data.balance_label}</h3>
+                    <div class="value" style="font-size:22px;color:${balColor};">${cbsFmt(data.display_balance)}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Unbilled Loads</h3>
+                    <div class="value" style="font-size:22px;">${data.load_count}</div>
+                </div>`;
+
+            document.getElementById('cbs-client-heading').textContent =
+                `Loads for ${data.client_name}`;
+
+            const body = document.getElementById('cbs-loads-body');
+            if (!data.transactions.length) {
+                body.innerHTML = `<tr><td colspan="6" style="color:#888;padding:16px;">No unbilled loads for this client in the selected period.</td></tr>`;
+            } else {
+                body.innerHTML = data.transactions.map(t => `
+                    <tr>
+                        <td>${t.load_no}</td>
+                        <td style="font-weight:700;color:#D4AF37;">${t.m_number}</td>
+                        <td>${t.delivery_date || '—'}</td>
+                        <td>${Number(t.cubic_meters || 0).toFixed(2)}</td>
+                        <td>${cbsFmt(t.rate_per_cubic)}</td>
+                        <td style="font-weight:700;">${cbsFmt(t.price)}</td>
+                    </tr>`).join('');
+            }
+            document.getElementById('cbs-table-total').textContent = cbsFmt(data.total_amount);
+
+            let note = '';
+            if (data.advance_amount === 0) {
+                note = 'No advance deducted — balance equals total amount. Enter an advance above and click Update Balance if needed.';
+            } else if (data.advance_carried_forward > 0) {
+                note = `Advance exceeds total. After settlement, ${cbsFmt(data.advance_carried_forward)} will be carried forward and not deducted twice.`;
+            } else {
+                note = `Advance of ${cbsFmt(data.advance_deducted)} will be deducted. Balance due: ${cbsFmt(data.balance_amount)}.`;
+            }
+            document.getElementById('cbs-edge-note').textContent = note;
+
+            const btn = document.getElementById('cbs-confirm-btn');
+            btn.disabled = data.load_count === 0 && data.advance_amount <= 0;
+            btn.style.opacity = btn.disabled ? '0.5' : '1';
+        }
+
+        async function confirmClientBilling() {
+            if (!cbsCurrentSummary || !cbsCurrentSummary.matched) {
+                showToast('Search for a client first.', 'error');
+                return;
+            }
+            if (!cbsCurrentSummary.transactions.length && !(cbsCurrentSummary.advance_amount > 0)) {
+                showToast('Nothing to settle.', 'error');
+                return;
+            }
+
+            // Apply latest typed advance silently before confirm
+            const typedAdvance = parseFloat(document.getElementById('cbs-advance-input').value);
+            if (Number.isFinite(typedAdvance) && typedAdvance >= 0) {
+                Object.assign(cbsCurrentSummary, cbsRecalcFromAdvance(cbsCurrentSummary.total_amount, typedAdvance));
+                renderClientBillingSummary(cbsCurrentSummary);
+            }
+
+            const s = cbsCurrentSummary;
+            const balLine = s.advance_carried_forward > 0
+                ? `Advance Carried Forward: ${cbsFmt(s.advance_carried_forward)}`
+                : `Balance Amount: ${cbsFmt(s.balance_amount)}`;
+            const msg =
+                `Confirm & generate bill for "${s.client_name}"?\n\n` +
+                `Loads: ${s.load_count}\n` +
+                `Total: ${cbsFmt(s.total_amount)}\n` +
+                `Advance Deducted: ${cbsFmt(s.advance_deducted)}\n` +
+                `${balLine}\n\n` +
+                `This will mark these loads as billed and cannot be billed again.`;
+            if (!confirm(msg)) return;
+
+            const btn = document.getElementById('cbs-confirm-btn');
+            btn.disabled = true;
+            btn.textContent = 'Generating…';
+
+            try {
+                const payload = {
+                    confirm: true,
+                    client: s.client_name,
+                    start: document.getElementById('cbs-start-date').value || '',
+                    end: document.getElementById('cbs-end-date').value || '',
+                    transaction_ids: s.transaction_ids,
+                    advance_amount: Number(s.advance_amount) || 0
+                };
+                const res = await fetch('/api/client-billing-summary/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    showToast(data.error || 'Failed to confirm bill', 'error');
+                    return;
+                }
+                showToast(`Bill ${data.invoice.invoice_number} generated successfully`, 'success');
+                if (data.pdf_url) window.open(data.pdf_url, '_blank');
+                await lookupClientBilling();
+                loadClientBillingHistory();
+                loadBillingRecords();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Generate Bill';
+            }
+        }
+
+        async function loadClientBillingHistory() {
+            const client = (document.getElementById('cbs-client-name').value || '').trim();
+            const body = document.getElementById('cbs-history-body');
+            body.innerHTML = `<tr><td colspan="7" style="color:#888;padding:16px;">Loading…</td></tr>`;
+            try {
+                let url = '/api/client-billing-summary/history';
+                if (client) url += '?client=' + encodeURIComponent(client);
+                const res = await fetch(url);
+                const data = await res.json();
+                const rows = data.data || [];
+                if (!rows.length) {
+                    body.innerHTML = `<tr><td colspan="7" style="color:#888;padding:16px;">No saved bills yet.</td></tr>`;
+                    return;
+                }
+                body.innerHTML = rows.map(r => {
+                    const cf = Number(r.advance_carried_forward || 0);
+                    const bal = cf > 0 ? `CF ${cbsFmt(cf)}` : cbsFmt(r.balance_amount);
+                    return `<tr>
+                        <td style="color:#D4AF37;font-weight:700;">${r.invoice_number || '—'}</td>
+                        <td>${r.client_name || '—'}</td>
+                        <td>${r.bill_date || '—'}</td>
+                        <td>${cbsFmt(r.total_amount)}</td>
+                        <td style="color:#4ade80;">${cbsFmt(r.advance_deducted)}</td>
+                        <td style="color:${cf > 0 ? '#fbbf24' : '#f87171'};">${bal}</td>
+                        <td><a href="/api/client-billing-summary/${r.id}/pdf" target="_blank" style="color:#D4AF37;">Open PDF</a></td>
+                    </tr>`;
+                }).join('');
+            } catch (err) {
+                body.innerHTML = `<tr><td colspan="7" style="color:#f87171;padding:16px;">Error loading history</td></tr>`;
+            }
+        }
+
+        async function lookupSupplierPayment() {
+            const supplier = document.getElementById('supplier-name').value.trim();
+            const start = document.getElementById('supplier-start-date').value;
+            const end = document.getElementById('supplier-end-date').value;
+            const includePaid = document.getElementById('supplier-include-paid').checked;
+            const statusEl = document.getElementById('supplier-status');
+
+            if (!supplier) {
+                showToast('Please enter a supplier name.', 'error');
+                return;
+            }
+            statusEl.textContent = 'Searching…';
+
+            let url = `/api/supplier-payment-summary?supplier=${encodeURIComponent(supplier)}`;
+            if (start) url += `&start=${encodeURIComponent(start)}`;
+            if (end) url += `&end=${encodeURIComponent(end)}`;
+            if (includePaid) url += `&include_paid=true`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    statusEl.textContent = data.error || data.message || 'Unable to fetch supplier data';
+                    document.getElementById('supplier-summary').style.display = 'none';
+                    return;
+                }
+                if (!data.matched) {
+                    statusEl.textContent = data.message || 'No matching supplier found';
+                    document.getElementById('supplier-summary').style.display = 'none';
+                    return;
+                }
+                statusEl.textContent = `Matched supplier: ${data.supplier_name}`;
+                document.getElementById('supplier-summary').style.display = 'block';
+                document.getElementById('supplier-name-value').textContent = data.supplier_name;
+                document.getElementById('supplier-total').textContent = '₹' + Number(data.total_amount || 0).toLocaleString('en-IN', {minimumFractionDigits:2});
+                document.getElementById('supplier-advance').textContent = '₹' + Number(data.advance_amount || 0).toLocaleString('en-IN', {minimumFractionDigits:2});
+                document.getElementById('supplier-balance-label').textContent = data.balance_label || 'Balance';
+                document.getElementById('supplier-balance').textContent = '₹' + Number(data.display_balance || 0).toLocaleString('en-IN', {minimumFractionDigits:2});
+
+                const rows = data.transactions.map((tx, idx) => `
+                    <tr>
+                        <td>${idx + 1}</td>
+                        <td>${tx.id}</td>
+                        <td>${tx.material_type || '—'}</td>
+                        <td>${Number(tx.quantity || 0).toFixed(2)}</td>
+                        <td>₹${Number(tx.price || 0).toFixed(2)}</td>
+                        <td>${tx.delivery_date || '—'}</td>
+                        <td>₹${Number(tx.advance || 0).toFixed(2)}</td>
+                        <td>${tx.status || 'unpaid'}</td>
+                    </tr>`);
+                document.getElementById('supplier-transactions').innerHTML = rows.join('') || '<tr><td colspan="8" style="color:#888;padding:16px;">No transactions found.</td></tr>';
+            } catch (err) {
+                statusEl.textContent = 'Search failed';
+                document.getElementById('supplier-summary').style.display = 'none';
+            }
+        }
+
+        async function confirmSupplierStatement() {
+            const supplier = document.getElementById('supplier-name').value.trim();
+            const start = document.getElementById('supplier-start-date').value;
+            const end = document.getElementById('supplier-end-date').value;
+            const statusEl = document.getElementById('supplier-status');
+
+            if (!supplier) {
+                showToast('Please enter a supplier name.', 'error');
+                return;
+            }
+            if (!confirm('Confirm settlement and generate supplier statement PDF?')) return;
+
+            statusEl.textContent = 'Generating…';
+            const payload = { confirm: true, supplier, start, end };
+            try {
+                const res = await fetch('/api/supplier-payment-summary/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    statusEl.textContent = data.error || 'Failed to confirm statement';
+                    return;
+                }
+                statusEl.textContent = 'Statement generated successfully';
+                if (data.pdf_url) window.open(data.pdf_url, '_blank');
+                await loadSupplierHistory();
+                lookupSupplierPayment();
+            } catch (err) {
+                statusEl.textContent = 'Confirmation failed';
+            }
+        }
+
+        async function loadSupplierHistory() {
+            const supplier = document.getElementById('supplier-name').value.trim();
+            const body = document.getElementById('supplier-history-body');
+            body.innerHTML = `<tr><td colspan="7" style="color:#888;padding:16px;">Loading…</td></tr>`;
+            try {
+                let url = '/api/supplier-payment-summary/history';
+                if (supplier) url += `?supplier=${encodeURIComponent(supplier)}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                const rows = data.data || [];
+                if (!rows.length) {
+                    body.innerHTML = `<tr><td colspan="7" style="color:#888;padding:16px;">No history saved yet.</td></tr>`;
+                    return;
+                }
+                body.innerHTML = rows.map(rec => {
+                    const cf = Number(rec.advance_carried_forward || 0);
+                    const bal = cf > 0 ? `CF ₹${cf.toLocaleString('en-IN', {minimumFractionDigits:2})}` : `₹${Number(rec.balance_amount || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}`;
+                    return `
+                        <tr>
+                            <td>${rec.statement_number || rec.id}</td>
+                            <td>${rec.supplier_name || '—'}</td>
+                            <td>${rec.statement_date || '—'}</td>
+                            <td>₹${Number(rec.total_amount || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                            <td>₹${Number(rec.advance_deducted || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                            <td>${bal}</td>
+                            <td><a href="/api/supplier-payment-summary/${rec.id}/pdf" target="_blank" style="color:#D4AF37;">Open PDF</a></td>
+                        </tr>`;
+                }).join('');
+            } catch (err) {
+                body.innerHTML = `<tr><td colspan="7" style="color:#f87171;padding:16px;">Unable to load history.</td></tr>`;
+            }
+        }
+
         // Initialize
         loadBillingRecords();
         loadExpenseRecords();
+        loadSupplierHistory();
     </script>
 </body>
 </html>
-

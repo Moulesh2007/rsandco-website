@@ -350,6 +350,50 @@ create table if not exists manual_billing (
     total_amount numeric default 0,
     advance_amount numeric default 0,
     balance_amount numeric default 0,
+    billing_status text default 'unbilled',
+    billing_summary_id text,
+    created_at text,
+    created_by text
+);
+
+-- Existing installations: add billing settlement columns if missing
+alter table manual_billing add column if not exists billing_status text default 'unbilled';
+alter table manual_billing add column if not exists billing_summary_id text;
+
+-- Client Billing Summaries (settled invoices)
+create table if not exists client_billing_summaries (
+    id text primary key,
+    invoice_number text unique not null,
+    client_name text not null,
+    bill_date text not null,
+    total_amount numeric default 0,
+    advance_deducted numeric default 0,
+    balance_amount numeric default 0,
+    advance_carried_forward numeric default 0,
+    transaction_ids text,
+    pdf_path text,
+    pdf_filename text,
+    notes text,
+    created_at text,
+    created_by text
+);
+
+-- Supplier Payment Summaries (settled supplier statements)
+create table if not exists supplier_payment_summaries (
+    id text primary key,
+    statement_number text unique not null,
+    supplier_name text not null,
+    statement_date text not null,
+    period_start text,
+    period_end text,
+    total_amount numeric default 0,
+    advance_deducted numeric default 0,
+    balance_amount numeric default 0,
+    advance_carried_forward numeric default 0,
+    transaction_ids text,
+    pdf_path text,
+    pdf_filename text,
+    notes text,
     created_at text,
     created_by text
 );
@@ -360,6 +404,8 @@ create table if not exists expenses (
     category text,
     date text,
     description text,
+    company_name text,
+    gst_no text,
     material_type text,
     quantity text,
     rate_per_ton text,
@@ -367,15 +413,27 @@ create table if not exists expenses (
     total_amount numeric default 0,
     advance_amount numeric default 0,
     balance_amount numeric default 0,
+    supplier_payment_status text default 'unpaid',
+    supplier_statement_id text,
     created_at text,
     created_by text
 );
 
+-- Existing installations created before GST support need this migration too.
+-- `create table if not exists` does not add a new column to an existing table.
+alter table expenses add column if not exists gst_no text;
+alter table expenses add column if not exists company_name text;
+alter table expenses add column if not exists supplier_payment_status text default 'unpaid';
+alter table expenses add column if not exists supplier_statement_id text;
+
 alter table manual_billing enable row level security;
 alter table expenses enable row level security;
+alter table client_billing_summaries enable row level security;
 
 create policy "Allow full access to manual_billing" on manual_billing for all using (true);
 create policy "Allow full access to expenses" on expenses for all using (true);
+drop policy if exists "Allow full access to client_billing_summaries" on client_billing_summaries;
+create policy "Allow full access to client_billing_summaries" on client_billing_summaries for all using (true);
 
 
 -- Fix RLS Policies for Python Backend (Anon Role)

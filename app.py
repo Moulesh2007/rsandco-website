@@ -24,9 +24,18 @@ load_dotenv()
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'rs-co-default-luxury-secret-key')
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Vercel serverless compatibility - adjust session cookie settings
+if os.getenv('VERCEL'):
+    # For Vercel, use looser cookie settings since it's behind HTTPS
+    app.config['SESSION_COOKIE_SECURE'] = False
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+else:
+    # Local development
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # CSRF Protection
 def generate_csrf_token():
@@ -63,8 +72,16 @@ def check_rate_limit(identifier, max_requests=5, window_seconds=60):
 
 # Supabase Initialization with Fallback
 SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+SUPABASE_KEY = None
+SUPABASE_KEY_NAME = None
+for key_name in ['SUPABASE_KEY', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_ROLE', 'SUPABASE_SERVICE_KEY', 'SUPABASE_API_KEY']:
+    value = os.getenv(key_name)
+    if value:
+        SUPABASE_KEY = value
+        SUPABASE_KEY_NAME = key_name
+        break
 SUPABASE_CLIENT = None
+SUPABASE_CONNECTED = False
 
 # ─── FILE-BASED PERSISTENCE ─────────────────────────────────────────────────
 import json
@@ -74,7 +91,8 @@ DB_FILE = os.path.join(os.path.dirname(__file__), 'data', 'db.json')
 # Keys that are user-created and must be persisted across restarts
 PERSISTED_KEYS = ['manual_billing', 'expenses', 'rmc_orders', 'rmc_order_items',
                    'rmc_invoices', 'rmc_payments', 'rmc_clients', 'submissions', 'newsletter',
-                   'rmc_users']
+                   'rmc_users', 'client_billing_summaries', 'supplier_payment_summaries']
+BILLING_PDF_DIR = os.path.join(os.path.dirname(__file__), 'data', 'billing_pdfs')
 
 def save_db():
     """Persist dynamic user data to disk."""
@@ -158,6 +176,8 @@ MOCK_DATABASE = {
             "total_amount": 24750,
             "advance_amount": 10000,
             "balance_amount": 14750,
+            "billing_status": "unbilled",
+            "billing_summary_id": None,
             "loading_time": "09:45 AM",
             "unloading_time": "10:30 AM",
             "created_at": "2025-12-11T10:30:00"
@@ -177,11 +197,15 @@ MOCK_DATABASE = {
             "total_amount": 38400,
             "advance_amount": 15000,
             "balance_amount": 23400,
+            "billing_status": "unbilled",
+            "billing_summary_id": None,
             "loading_time": "01:30 PM",
             "unloading_time": "02:15 PM",
             "created_at": "2025-12-10T14:15:00"
         }
     ],
+    "client_billing_summaries": [],
+    "supplier_payment_summaries": [],
     "expenses": [],
     "plants": [
         {
@@ -337,12 +361,28 @@ MOCK_DATABASE = {
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         SUPABASE_CLIENT = create_client(SUPABASE_URL, SUPABASE_KEY)
-        logger.info("Successfully connected to Supabase.")
+        SUPABASE_CONNECTED = True
+        logger.info(f"Connected to Supabase using key env var: {SUPABASE_KEY_NAME}")
     except Exception as e:
+        SUPABASE_CONNECTED = False
         logger.error(f"Error initializing Supabase client: {e}. Falling back to mock database.")
 else:
     logger.warning("Supabase credentials not found. App running in LOCAL MOCK DATABASE mode.")
-    load_db()  # Restore persisted data on startup
+
+# Keep the local data available for explicit local/mock mode.  In particular,
+# do not lose locally created records merely because cloud credentials exist
+# but the cloud service is temporarily unavailable.
+load_db()
+
+@app.route('/api/supabase-status', methods=['GET'])
+def supabase_status():
+    return jsonify({
+        "connected": bool(SUPABASE_CONNECTED),
+        "mode": "supabase" if SUPABASE_CONNECTED else "mock",
+        "supabase_url_present": bool(SUPABASE_URL),
+        "supabase_key_name": SUPABASE_KEY_NAME,
+        "supabase_url": SUPABASE_URL or ""
+    })
 
 # ----------------- Frontend Routes -----------------
 @app.route('/')
@@ -477,6 +517,14 @@ def billing_expense():
         return jsonify({"error": "Access denied. Admin or Manager role required."}), 403
     
     return render_template('billing_expense.html')
+
+@app.route('/supplier-payment-summary')
+def supplier_payment_summary_page():
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied. Admin or Manager role required."}), 403
+    return render_template('supplier_payment_summary.html')
 
 @app.route('/invoice-letterpad')
 def invoice_letterpad():
@@ -1485,7 +1533,7 @@ def manual_billing():
     if request.method == 'GET':
         if SUPABASE_CLIENT:
             try:
-                response = SUPABASE_CLIENT.table("manual_billing").select("*").execute()
+                response = SUPABASE_CLIENT.table("manual_billing").select("*").limit(10000).execute()
                 billing_records = response.data if response.data else []
             except Exception as e:
                 logger.error(f"Supabase billing fetch error: {e}")
@@ -1519,21 +1567,14 @@ def manual_billing():
             "total_amount": data.get('total_amount', 0),
             "advance_amount": data.get('advance_amount', 0),
             "balance_amount": data.get('balance_amount', 0),
+            "billing_status": "unbilled",
+            "billing_summary_id": None,
             "created_at": datetime.now().isoformat(),
             "created_by": session.get('username', 'system')
         }
-        
-        if SUPABASE_CLIENT:
-            try:
-                response = SUPABASE_CLIENT.table("manual_billing").insert(billing_record).execute()
-                if response.data:
-                    billing_record = response.data[0]
-            except Exception as e:
-                logger.error(f"Supabase billing insert error: {e}")
-        else:
-            MOCK_DATABASE.setdefault("manual_billing", []).append(billing_record)
-            save_db()  # Persist to disk
-        
+
+        # Use resilient insert (retries without settlement columns if DB not migrated)
+        billing_record = _insert_manual_billing_record(billing_record)
         return jsonify({"success": True, "data": billing_record})
 
 @app.route('/api/manual-billing/<billing_id>', methods=['PUT', 'DELETE'])
@@ -1586,9 +1627,11 @@ def manual_billing_pdf(billing_id):
                     billing_record = response.data[0]
             except Exception as e:
                 logger.error(f"Supabase billing fetch error: {e}")
-        else:
+
+        # Fallback to local store (insert may have landed here if Supabase failed)
+        if not billing_record:
             for record in MOCK_DATABASE.get("manual_billing", []):
-                if record['id'] == billing_id:
+                if record.get('id') == billing_id:
                     billing_record = record
                     break
 
@@ -1845,7 +1888,7 @@ def manual_billing_pdf(billing_id):
 def export_manual_billing_excel():
     if SUPABASE_CLIENT:
         try:
-            response = SUPABASE_CLIENT.table("manual_billing").select("*").execute()
+            response = SUPABASE_CLIENT.table("manual_billing").select("*").limit(10000).execute()
             billing_records = response.data if response.data else []
         except Exception as e:
             logger.error(f"Supabase billing export error: {e}")
@@ -1913,7 +1956,10 @@ def expenses():
         return jsonify({"success": True, "data": expense_records})
     
     elif request.method == 'POST':
-        data = request.json
+        data = request.get_json(silent=True)
+
+        if not isinstance(data, dict):
+            return jsonify({"error": "A valid JSON expense record is required"}), 400
 
         # Only category and date are always required
         if not data.get('category') or not data.get('date'):
@@ -1925,8 +1971,11 @@ def expenses():
             "category":       data.get('category', ''),
             "date":           data.get('date', ''),
             "description":    data.get('description', ''),
+            "company_name":   data.get('company_name', data.get('description', '')),
+            "gst_no":         data.get('gst_no', ''),
             # Raw-material specific fields
             "material_type":  data.get('material_type', ''),
+            "quality":        data.get('quality', ''),
             "quantity":       data.get('quantity', ''),
             "rate_per_ton":   data.get('rate_per_ton', ''),
             # Financial fields
@@ -1934,15 +1983,24 @@ def expenses():
             "total_amount":   data.get('total_amount', data.get('amount', 0)),
             "advance_amount": data.get('advance_amount', 0),
             "balance_amount": data.get('balance_amount', data.get('amount', 0)),
+            "supplier_payment_status": data.get('supplier_payment_status', 'unpaid'),
+            "supplier_statement_id": data.get('supplier_statement_id'),
             "created_at":     datetime.now().isoformat(),
             "created_by":     session.get('username', 'system')
         }
 
         if SUPABASE_CLIENT:
             try:
-                SUPABASE_CLIENT.table("expenses").insert(expense_record).execute()
+                response = SUPABASE_CLIENT.table("expenses").insert(expense_record).execute()
+                # An insert must return the row we just wrote.  Treat an empty
+                # response as a failure so the UI never displays a false success.
+                if not response.data:
+                    raise RuntimeError("The database did not confirm the expense insert")
             except Exception as e:
                 logger.error(f"Supabase expense insert error: {e}")
+                return jsonify({
+                    "error": "Expense was not saved to the database. Please try again or contact an administrator."
+                }), 502
         else:
             MOCK_DATABASE.setdefault("expenses", []).append(expense_record)
             save_db()  # Persist to disk
@@ -1977,8 +2035,198 @@ def expense_detail(expense_id):
         else:
             MOCK_DATABASE["expenses"] = [r for r in MOCK_DATABASE.get("expenses", []) if r['id'] != expense_id]
             save_db()  # Persist to disk
-        
         return jsonify({"success": True})
+
+
+@app.route('/api/supplier-payment-summary', methods=['GET'])
+def supplier_payment_summary():
+    if 'username' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    supplier = request.args.get('supplier', '').strip()
+    start_date = request.args.get('start', '').strip()
+    end_date = request.args.get('end', '').strip()
+    include_paid = request.args.get('include_paid', '').lower() in ('1', 'true', 'yes')
+
+    if not supplier:
+        return jsonify({"error": "Supplier name is required"}), 400
+
+    try:
+        summary = _compute_supplier_payment_summary(supplier, start_date, end_date, include_paid=include_paid)
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"Supplier payment summary error: {e}")
+        import traceback; logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/supplier-payment-summary/history', methods=['GET'])
+def supplier_payment_summary_history():
+    if 'username' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    supplier = request.args.get('supplier', '').strip()
+    try:
+        rows = _fetch_supplier_payment_summaries()
+        if supplier:
+            wanted = _normalize_supplier_name(supplier)
+            rows = [r for r in rows if wanted in _normalize_supplier_name(r.get('supplier_name'))]
+        rows.sort(key=lambda r: str(r.get('statement_date') or r.get('created_at') or ''), reverse=True)
+        return jsonify({"success": True, "data": rows})
+    except Exception as e:
+        logger.error(f"Supplier payment history error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/supplier-payment-summary/confirm', methods=['POST'])
+def supplier_payment_summary_confirm():
+    if 'username' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.json or {}
+    if not data.get('confirm'):
+        return jsonify({"error": "Confirmation required. Set confirm=true to settle."}), 400
+
+    supplier = (data.get('supplier') or '').strip()
+    start_date = (data.get('start') or '').strip()
+    end_date = (data.get('end') or '').strip()
+    requested_ids = data.get('transaction_ids')
+
+    if not supplier:
+        return jsonify({"error": "Supplier name is required"}), 400
+
+    try:
+        summary = _compute_supplier_payment_summary(supplier, start_date, end_date, include_paid=False)
+        if not summary.get('matched'):
+            return jsonify({"error": summary.get('message', 'Supplier not found')}), 404
+
+        txn_ids = list(summary.get('transaction_ids') or [])
+        if requested_ids is not None:
+            requested_set = set(requested_ids)
+            txn_ids = [i for i in txn_ids if i in requested_set]
+            summary['transactions'] = [t for t in summary['transactions'] if t['id'] in txn_ids]
+            summary['transaction_ids'] = txn_ids
+            summary['total_amount'] = round(sum(t['price'] for t in summary['transactions']), 2)
+            summary['advance_amount'] = round(sum(float(next((r.get('advance_amount') for r in _fetch_all_expenses() if r.get('id') == t['id']), 0)) for t in summary['transactions']), 2)
+            if summary['advance_amount'] > summary['total_amount']:
+                summary['advance_deducted'] = round(summary['total_amount'], 2)
+                summary['balance_amount'] = 0.0
+                summary['advance_carried_forward'] = round(summary['advance_amount'] - summary['total_amount'], 2)
+                summary['balance_label'] = 'Advance Carried Forward'
+                summary['display_balance'] = summary['advance_carried_forward']
+            else:
+                summary['advance_deducted'] = round(summary['advance_amount'], 2)
+                summary['balance_amount'] = round(summary['total_amount'] - summary['advance_amount'], 2)
+                summary['advance_carried_forward'] = 0.0
+                summary['balance_label'] = 'Balance Amount'
+                summary['display_balance'] = summary['balance_amount']
+
+        statement_date = datetime.now().strftime('%Y-%m-%d')
+        statement_number = f"SPS-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        summary_id = f"sps-{uuid.uuid4().hex[:10]}"
+
+        pdf_bytes, pdf_filename = _build_supplier_payment_pdf(summary, statement_number, statement_date)
+        pdf_path = None
+        try:
+            os.makedirs(BILLING_PDF_DIR, exist_ok=True)
+            abs_path = os.path.join(BILLING_PDF_DIR, pdf_filename)
+            with open(abs_path, 'wb') as f:
+                f.write(pdf_bytes)
+            pdf_path = abs_path
+        except Exception as e:
+            logger.warning(f"Could not save supplier statement PDF to disk: {e}")
+            pdf_path = f"memory:{pdf_filename}"
+
+        summary_record = {
+            "id": summary_id,
+            "statement_number": statement_number,
+            "supplier_name": summary['supplier_name'],
+            "statement_date": statement_date,
+            "period_start": summary['period']['start'],
+            "period_end": summary['period']['end'],
+            "total_amount": summary['total_amount'],
+            "advance_deducted": summary['advance_amount'],
+            "balance_amount": summary['balance_amount'],
+            "advance_carried_forward": summary['advance_carried_forward'],
+            "transaction_ids": json.dumps(txn_ids),
+            "pdf_path": pdf_path,
+            "pdf_filename": pdf_filename,
+            "notes": summary['balance_label'],
+            "created_at": datetime.now().isoformat(),
+            "created_by": session.get('username', 'system')
+        }
+        _insert_supplier_payment_summary(summary_record)
+
+        for tid in txn_ids:
+            _update_expense_record(tid, {
+                "supplier_payment_status": "paid",
+                "supplier_statement_id": summary_id
+            })
+
+        return jsonify({
+            "success": True,
+            "message": "Supplier statement confirmed and generated successfully",
+            "statement": summary_record,
+            "summary": {
+                "supplier_name": summary['supplier_name'],
+                "total_amount": summary['total_amount'],
+                "advance_deducted": summary['advance_amount'],
+                "balance_amount": summary['balance_amount'],
+                "advance_carried_forward": summary['advance_carried_forward'],
+                "balance_label": summary['balance_label'],
+                "records_settled": len(txn_ids)
+            },
+            "pdf_url": f"/api/supplier-payment-summary/{summary_id}/pdf"
+        })
+    except Exception as e:
+        logger.error(f"Supplier payment confirm error: {e}")
+        import traceback; logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/supplier-payment-summary/<summary_id>/pdf', methods=['GET'])
+def supplier_payment_summary_pdf(summary_id):
+    if 'username' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        cache = getattr(app, '_billing_pdf_cache', {})
+        if summary_id in cache:
+            pdf_bytes = cache[summary_id]
+            fname = f"supplier_statement_{summary_id}.pdf"
+            response = make_response(pdf_bytes)
+            response.headers['Content-Type'] = 'application/pdf'
+            response.headers['Content-Disposition'] = f'inline; filename={fname}'
+            return response
+
+        rows = _fetch_supplier_payment_summaries()
+        rec = next((r for r in rows if r.get('id') == summary_id), None)
+        if not rec:
+            return jsonify({"error": "Supplier statement not found"}), 404
+
+        pdf_path = rec.get('pdf_path') or ''
+        fname = rec.get('pdf_filename') or f"{summary_id}.pdf"
+        if pdf_path and not pdf_path.startswith('memory:') and os.path.exists(pdf_path):
+            with open(pdf_path, 'rb') as f:
+                pdf_bytes = f.read()
+            response = make_response(pdf_bytes)
+            response.headers['Content-Type'] = 'application/pdf'
+            response.headers['Content-Disposition'] = f'inline; filename={fname}'
+            return response
+
+        return jsonify({"error": "PDF file not available"}), 404
+    except Exception as e:
+        logger.error(f"Supplier payment summary PDF error: {e}")
+        import traceback; logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 # ── Per-expense PDF Invoice ──────────────────────────────────────────────────
 @app.route('/api/expenses/<expense_id>/pdf', methods=['GET'])
@@ -2109,8 +2357,9 @@ def expense_pdf(expense_id):
         rows_data = []
         if is_raw:
             rows_data = [
-                ("Material Type",    str(rec.get('material_type','—'))),
-                ("Quantity",         f"{rec.get('quantity','—')} Tons"),
+                ("Material Type",    str(rec.get('material_type','\u2014'))),
+                ("Quality",          str(rec.get('quality','\u2014')) if rec.get('quality') else '\u2014'),
+                ("Quantity",         f"{rec.get('quantity','\u2014')} Tons"),
                 ("Rate per Ton",     f"\u20b9 {float(rec.get('rate_per_ton',0)):,.2f}"),
             ]
         rows_data.append(("Total Amount", f"\u20b9 {float(rec.get('total_amount', rec.get('amount',0))):,.2f}"))
@@ -2200,7 +2449,7 @@ def expense_excel(expense_id):
         ws.append([])  # blank row
 
         # Column headers
-        headers = ["Expense ID","Date","Category","Material Type","Qty (Tons)","Rate/Ton (₹)","Total (₹)","Advance (₹)","Balance (₹)","Description","Created At"]
+        headers = ["Expense ID","Date","Category","Material Type","Quality","Qty (Tons)","Rate/Ton (₹)","Total (₹)","Advance (₹)","Balance (₹)","Description","Created At"]
         ws.append(headers)
         for col_idx, _ in enumerate(headers, 1):
             cell = ws.cell(row=4, column=col_idx)
@@ -2214,6 +2463,7 @@ def expense_excel(expense_id):
             rec.get('date',''),
             rec.get('category',''),
             rec.get('material_type','—'),
+            rec.get('quality','—') if rec.get('quality') else '—',
             rec.get('quantity','—'),
             rec.get('rate_per_ton','—'),
             float(rec.get('total_amount', rec.get('amount', 0))),
@@ -2222,11 +2472,11 @@ def expense_excel(expense_id):
             rec.get('description',''),
             rec.get('created_at',''),
         ])
-        for col_idx in range(1, 12):
+        for col_idx in range(1, 13):
             ws.cell(row=5, column=col_idx).alignment = left
 
         # Column widths
-        for col, width in zip(['A','B','C','D','E','F','G','H','I','J','K'], [20,14,16,16,12,14,14,14,14,28,22]):
+        for col, width in zip(['A','B','C','D','E','F','G','H','I','J','K','L'], [20,14,16,16,12,12,14,14,14,14,28,22]):
             ws.column_dimensions[col].width = width
         ws.row_dimensions[1].height = 26
         ws.row_dimensions[2].height = 16
@@ -2263,7 +2513,7 @@ def export_expenses_excel():
     ws = wb.active
     ws.title = "Expenses"
     
-    headers = ["ID", "Category", "Amount", "Description", "Date", "Created At", "Created By"]
+    headers = ["ID", "Category", "Amount", "Company Name", "GST NO", "Date", "Created At", "Created By"]
     ws.append(headers)
     
     for col in range(1, len(headers) + 1):
@@ -2278,6 +2528,7 @@ def export_expenses_excel():
             record.get('category', ''),
             record.get('amount', 0),
             record.get('description', ''),
+            record.get('gst_no', ''),
             record.get('date', ''),
             record.get('created_at', ''),
             record.get('created_by', '')
@@ -2427,8 +2678,8 @@ def combined_report_pdf():
         # ── Fetch data ────────────────────────────────────────────
         if SUPABASE_CLIENT:
             try:
-                bills = SUPABASE_CLIENT.table("manual_billing").select("*").execute().data or []
-                exps  = SUPABASE_CLIENT.table("expenses").select("*").execute().data or []
+                bills = SUPABASE_CLIENT.table("manual_billing").select("*").limit(10000).execute().data or []
+                exps  = SUPABASE_CLIENT.table("expenses").select("*").limit(10000).execute().data or []
             except Exception as e:
                 logger.error(f"Supabase fetch error: {e}")
                 bills = MOCK_DATABASE.get("manual_billing", [])
@@ -3413,7 +3664,7 @@ def company_billing_report_pdf():
         # Fetch billing records
         if SUPABASE_CLIENT:
             try:
-                resp = SUPABASE_CLIENT.table("manual_billing").select("*").execute()
+                resp = SUPABASE_CLIENT.table("manual_billing").select("*").limit(10000).execute()
                 all_bills = resp.data if resp.data else []
             except Exception as e:
                 logger.error(f"Supabase billing fetch error: {e}")
@@ -3421,9 +3672,27 @@ def company_billing_report_pdf():
         else:
             all_bills = MOCK_DATABASE.get("manual_billing", [])
 
-        # Filter
-        search_terms = [t for t in company_kw.lower().split() if t]
-        all_bills = [b for b in all_bills if all(term in str(b.get('company_name', '')).lower() for term in search_terms)]
+        # Resolve a spelling variation to one company, then filter by that exact
+        # normalized name.  Per-word fuzzy matching could merge different customers.
+        import difflib
+        def normalize_company_name(value):
+            return re.sub(r'[^a-z0-9]', '', str(value or '').lower())
+
+        wanted_name = normalize_company_name(company_kw)
+        company_names = {str(b.get('company_name', '')).strip() for b in all_bills if b.get('company_name')}
+        best_name = ''
+        best_score = 0.0
+        for name in company_names:
+            normalized_name = normalize_company_name(name)
+            score = difflib.SequenceMatcher(None, wanted_name, normalized_name).ratio()
+            if normalized_name == wanted_name:
+                best_name, best_score = name, 1.0
+                break
+            if score > best_score:
+                best_name, best_score = name, score
+
+        all_bills = [b for b in all_bills if best_score >= 0.70 and
+                     normalize_company_name(b.get('company_name')) == normalize_company_name(best_name)]
         
         if start_date:
             all_bills = [b for b in all_bills if str(b.get('date', '')) >= start_date]
@@ -3704,6 +3973,1443 @@ def company_billing_report_pdf():
     except Exception as e:
         logger.error(f"Company billing report PDF error: {e}")
         import traceback; logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+# ── All Companies Summary PDF ──────────────────────────────────────────────
+@app.route('/api/reports/all-companies-summary/pdf', methods=['GET'])
+def all_companies_summary_pdf():
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from datetime import datetime as dt2
+    from collections import defaultdict
+    import os, re
+
+    start_date = request.args.get('start', '').strip()
+    end_date   = request.args.get('end',   '').strip()
+
+    try:
+        # Fetch all billing records
+        if SUPABASE_CLIENT:
+            try:
+                resp = SUPABASE_CLIENT.table("manual_billing").select("*").limit(10000).execute()
+                all_bills = resp.data if resp.data else []
+            except Exception as e:
+                logger.error(f"Supabase billing fetch error: {e}")
+                all_bills = MOCK_DATABASE.get("manual_billing", [])
+        else:
+            all_bills = MOCK_DATABASE.get("manual_billing", [])
+
+        # Date filter
+        if start_date:
+            all_bills = [b for b in all_bills if str(b.get('date', '')) >= start_date]
+        if end_date:
+            all_bills = [b for b in all_bills if str(b.get('date', '')) <= end_date]
+
+        # Group by normalised company name
+        groups = defaultdict(lambda: {'count': 0, 'm3': 0.0, 'amount': 0.0, 'advance': 0.0, 'balance': 0.0})
+        for b in all_bills:
+            key = (b.get('company_name') or '—').strip().upper()
+            groups[key]['count']   += 1
+            groups[key]['m3']      += float(b.get('cubic_meters',   0) or 0)
+            groups[key]['amount']  += float(b.get('total_amount',   0) or 0)
+            groups[key]['advance'] += float(b.get('advance_amount', 0) or 0)
+            groups[key]['balance'] += float(b.get('balance_amount', 0) or 0)
+
+        sorted_companies = sorted(groups.items(), key=lambda x: x[0])
+
+        # Totals
+        grand_m3      = sum(v['m3']      for _, v in sorted_companies)
+        grand_amount  = sum(v['amount']  for _, v in sorted_companies)
+        grand_advance = sum(v['advance'] for _, v in sorted_companies)
+        grand_balance = sum(v['balance'] for _, v in sorted_companies)
+
+        # ── PDF Setup ──────────────────────────────────────────────────────
+        buffer = BytesIO()
+        W, H   = landscape(A4)  # landscape for wide table
+        c      = pdf_canvas.Canvas(buffer, pagesize=landscape(A4))
+
+        GOLD      = colors.HexColor('#D4AF37')
+        BLACK     = colors.HexColor('#1a1a1a')
+        WHITE     = colors.white
+        LT_GRAY   = colors.HexColor('#f5f5f5')
+        MID_GRAY  = colors.HexColor('#e0e0e0')
+        GREEN     = colors.HexColor('#22c55e')
+        RED       = colors.HexColor('#ef4444')
+        DARK_BG   = colors.HexColor('#2a2a2a')
+
+        logo_path = os.path.join('static', 'images', 'logo.png')
+        period_str = f"{start_date or 'All'} to {end_date or 'Date'}"
+
+        COL_X     = [30, 200, 330, 410, 500, 610, 700]  # column x positions
+        COL_W     = [170, 130, 80,  90, 110, 90,  80]   # column widths
+
+        def fmt_inr(v):
+            return f"\u20b9{v:,.2f}"
+
+        def draw_header():
+            banner_h = 80
+            banner_y = H - banner_h
+            c.setFillColor(GOLD)
+            c.rect(0, banner_y, W, banner_h, fill=1, stroke=0)
+
+            lbw, lbh = 70, 58
+            lbx = 14
+            lby = banner_y + (banner_h - lbh) / 2
+            c.setFillColor(BLACK)
+            c.rect(lbx, lby, lbw, lbh, fill=1, stroke=0)
+            if os.path.exists(logo_path):
+                try:
+                    c.drawImage(logo_path, lbx+3, lby+3, width=lbw-6, height=lbh-6,
+                                preserveAspectRatio=True, mask='auto')
+                except Exception:
+                    pass
+
+            cx2 = lbx + lbw + 12
+            cy2 = banner_y + banner_h / 2
+            c.setFont('Helvetica-Bold', 13); c.setFillColor(BLACK)
+            c.drawString(cx2, cy2 + 12, "R SUNDARAM & CO")
+            c.setFont('Helvetica', 9)
+            c.drawString(cx2, cy2 - 2, "Overall Company Billing Summary Report")
+            c.setFont('Helvetica', 8)
+            c.drawString(cx2, cy2 - 14, f"Period: {period_str}   |   Generated: {dt2.now().strftime('%d-%b-%Y %I:%M %p')}")
+
+            # right side stats
+            rx = W - 260
+            c.setFont('Helvetica-Bold', 10); c.setFillColor(BLACK)
+            c.drawString(rx, cy2 + 14, f"Companies: {len(sorted_companies)}")
+            c.drawString(rx, cy2 + 0,  f"Total Deliveries: {len(all_bills)}")
+            c.drawString(rx, cy2 - 14, f"Total M\u00b3: {grand_m3:.2f}")
+
+        def draw_table_header(y):
+            headers  = ['Company Name', 'Deliveries', 'Total M\u00b3', 'Total Amount', 'Advance (₹)', 'Balance (₹)']
+            col_xs   = COL_X[1:]
+            col_ws   = COL_W[1:]
+            row_h    = 20
+            c.setFillColor(GOLD)
+            c.rect(COL_X[0], y - row_h, W - COL_X[0] - 14, row_h, fill=1, stroke=0)
+            c.setFont('Helvetica-Bold', 8); c.setFillColor(BLACK)
+            # # column
+            c.drawString(COL_X[0] + 4, y - row_h + 6, '#')
+            for i, (hdr, cx, cw) in enumerate(zip(headers, col_xs, col_ws)):
+                c.drawString(cx, y - row_h + 6, hdr)
+            return y - row_h
+
+        def draw_footer(page_num, total_pages=None):
+            c.setFont('Helvetica', 7); c.setFillColor(colors.HexColor('#888888'))
+            footer_txt = f"R Sundaram & Co  |  All Companies Summary  |  Page {page_num}"
+            c.drawString(30, 18, footer_txt)
+            c.drawRightString(W - 30, 18, dt2.now().strftime('%d-%b-%Y'))
+
+        # ── Draw Pages ─────────────────────────────────────────────────────
+        PAGE_TOP    = H - 95
+        PAGE_BOTTOM = 40
+        ROW_H       = 17
+        page_num    = 1
+
+        draw_header()
+        y = draw_table_header(PAGE_TOP)
+
+        for idx, (company, vals) in enumerate(sorted_companies):
+            if y - ROW_H < PAGE_BOTTOM:
+                draw_footer(page_num)
+                c.showPage()
+                page_num += 1
+                draw_header()
+                y = draw_table_header(PAGE_TOP)
+
+            bg = LT_GRAY if idx % 2 == 0 else WHITE
+            c.setFillColor(bg)
+            c.rect(COL_X[0], y - ROW_H, W - COL_X[0] - 14, ROW_H, fill=1, stroke=0)
+
+            c.setFont('Helvetica', 8); c.setFillColor(BLACK)
+            c.drawString(COL_X[0] + 4, y - ROW_H + 5, str(idx + 1))
+            c.setFont('Helvetica-Bold', 8)
+            # truncate long names
+            disp_name = company[:32] + '…' if len(company) > 32 else company
+            c.drawString(COL_X[1], y - ROW_H + 5, disp_name)
+            c.setFont('Helvetica', 8)
+            c.drawString(COL_X[2], y - ROW_H + 5, str(vals['count']))
+            c.drawString(COL_X[3], y - ROW_H + 5, f"{vals['m3']:.2f}")
+            c.setFillColor(BLACK)
+            c.drawString(COL_X[4], y - ROW_H + 5, fmt_inr(vals['amount']))
+            c.setFillColor(GREEN)
+            c.drawString(COL_X[5], y - ROW_H + 5, fmt_inr(vals['advance']))
+            c.setFillColor(RED if vals['balance'] > 0 else GREEN)
+            c.drawString(COL_X[6], y - ROW_H + 5, fmt_inr(vals['balance']))
+
+            y -= ROW_H
+
+        # Grand totals row
+        if y - ROW_H * 2 < PAGE_BOTTOM:
+            draw_footer(page_num)
+            c.showPage()
+            page_num += 1
+            draw_header()
+            y = draw_table_header(PAGE_TOP)
+
+        y -= 4
+        c.setFillColor(GOLD)
+        c.rect(COL_X[0], y - ROW_H, W - COL_X[0] - 14, ROW_H, fill=1, stroke=0)
+        c.setFont('Helvetica-Bold', 9); c.setFillColor(BLACK)
+        c.drawString(COL_X[0] + 4, y - ROW_H + 5, 'GRAND TOTALS')
+        c.drawString(COL_X[2], y - ROW_H + 5, str(len(all_bills)))
+        c.drawString(COL_X[3], y - ROW_H + 5, f"{grand_m3:.2f}")
+        c.drawString(COL_X[4], y - ROW_H + 5, fmt_inr(grand_amount))
+        c.drawString(COL_X[5], y - ROW_H + 5, fmt_inr(grand_advance))
+        c.drawString(COL_X[6], y - ROW_H + 5, fmt_inr(grand_balance))
+
+        draw_footer(page_num)
+        c.save()
+        buffer.seek(0)
+
+        fname = f"all_companies_summary_{dt2.now().strftime('%Y%m%d')}.pdf"
+        rsp = make_response(buffer.getvalue())
+        rsp.headers['Content-Disposition'] = f'inline; filename={fname}'
+        rsp.headers['Content-Type'] = 'application/pdf'
+        return rsp
+
+    except Exception as e:
+        logger.error(f"All companies summary PDF error: {e}")
+        import traceback; logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Client Billing Summary helpers ─────────────────────────────────────────
+def _normalize_client_name(value):
+    import re
+    return re.sub(r'[^a-z0-9]', '', str(value or '').lower())
+
+
+def _resolve_client_name(keyword, records):
+    """Resolve a search keyword to one company_name (exact / contains / strict fuzzy)."""
+    import difflib
+    wanted = _normalize_client_name(keyword)
+    if not wanted:
+        return '', 0.0
+    names = {str(b.get('company_name', '')).strip() for b in records if b.get('company_name')}
+
+    # 1) Exact normalized match
+    for name in names:
+        if _normalize_client_name(name) == wanted:
+            return name, 1.0
+
+    # 2) Substring / contains match (prefer longest company name)
+    contains = []
+    for name in names:
+        normalized = _normalize_client_name(name)
+        if wanted in normalized or normalized in wanted:
+            contains.append((name, normalized))
+    if contains:
+        contains.sort(key=lambda x: len(x[1]), reverse=True)
+        return contains[0][0], 0.95
+
+    # 3) Strict fuzzy (avoid accidental merges like ABC → SRI CONSTRUCTIONS)
+    best_name, best_score = '', 0.0
+    for name in names:
+        normalized = _normalize_client_name(name)
+        score = difflib.SequenceMatcher(None, wanted, normalized).ratio()
+        if score > best_score:
+            best_name, best_score = name, score
+    min_score = 0.88 if len(wanted) >= 6 else 0.92
+    if best_score >= min_score:
+        return best_name, best_score
+    return '', 0.0
+
+
+def _collect_billed_transaction_ids():
+    """IDs already settled via client_billing_summaries (works even before billing_status column exists)."""
+    import json as _json
+    billed = set()
+    for row in _fetch_client_billing_summaries():
+        raw = row.get('transaction_ids') or '[]'
+        try:
+            ids = _json.loads(raw) if isinstance(raw, str) else (raw or [])
+        except Exception:
+            ids = []
+        for i in ids:
+            if i:
+                billed.add(i)
+    return billed
+
+
+def _is_unbilled_record(record, billed_ids=None):
+    status = str(record.get('billing_status') or 'unbilled').strip().lower()
+    if status == 'billed':
+        return False
+    if billed_ids is not None and record.get('id') in billed_ids:
+        return False
+    return True
+
+
+def _is_advance_carry_record(record):
+    return str(record.get('grade') or '').strip().upper() in ('ADV-CF', 'ADVANCE CF', 'ADVANCE-CF')
+
+
+def _is_invoice_record(record):
+    return str(record.get('grade') or '').strip().upper() == 'CBS-INV'
+
+
+def _summary_from_invoice_row(row):
+    """Rebuild a client_billing_summaries-shaped dict from a durable CBS-INV manual_billing row."""
+    import json as _json
+    meta = {}
+    raw_addr = row.get('address') or ''
+    try:
+        if isinstance(raw_addr, dict):
+            meta = raw_addr
+        elif str(raw_addr).strip().startswith('{'):
+            meta = _json.loads(raw_addr)
+    except Exception:
+        meta = {}
+    txn_ids = meta.get('transaction_ids') or []
+    return {
+        "id": row.get('id'),
+        "invoice_number": meta.get('invoice_number') or row.get('vehicle_number') or row.get('id'),
+        "client_name": row.get('company_name'),
+        "bill_date": row.get('date') or meta.get('bill_date'),
+        "total_amount": float(row.get('total_amount') or meta.get('total_amount') or 0),
+        "advance_deducted": float(row.get('advance_amount') or meta.get('advance_deducted') or 0),
+        "balance_amount": float(row.get('balance_amount') or meta.get('balance_amount') or 0),
+        "advance_carried_forward": float(meta.get('advance_carried_forward') or 0),
+        "transaction_ids": _json.dumps(txn_ids) if not isinstance(txn_ids, str) else txn_ids,
+        "pdf_path": meta.get('pdf_path'),
+        "pdf_filename": meta.get('pdf_filename'),
+        "notes": meta.get('notes') or row.get('driver_name'),
+        "created_at": row.get('created_at'),
+        "created_by": row.get('created_by'),
+    }
+
+
+def _fetch_all_manual_billing():
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("manual_billing").select("*").limit(10000).execute()
+            return resp.data if resp.data else []
+        except Exception as e:
+            logger.error(f"Supabase billing fetch error: {e}")
+            return MOCK_DATABASE.get("manual_billing", [])
+    return MOCK_DATABASE.get("manual_billing", [])
+
+
+def _fetch_all_expenses():
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("expenses").select("*").limit(10000).execute()
+            return resp.data if resp.data else []
+        except Exception as e:
+            logger.error(f"Supabase expenses fetch error: {e}")
+            return MOCK_DATABASE.get("expenses", [])
+    return MOCK_DATABASE.get("expenses", [])
+
+
+def _normalize_supplier_name(value):
+    import re
+    return re.sub(r'[^a-z0-9]', '', str(value or '').lower())
+
+
+def _resolve_supplier_name(keyword, records):
+    import difflib
+    wanted = _normalize_supplier_name(keyword)
+    if not wanted:
+        return '', 0.0
+    names = {str(r.get('company_name', '')).strip() for r in records if r.get('company_name')}
+
+    for name in names:
+        if _normalize_supplier_name(name) == wanted:
+            return name, 1.0
+
+    contains = []
+    for name in names:
+        normalized = _normalize_supplier_name(name)
+        if wanted in normalized or normalized in wanted:
+            contains.append((name, normalized))
+    if contains:
+        contains.sort(key=lambda x: len(x[1]), reverse=True)
+        return contains[0][0], 0.95
+
+    fuzzy_name = ''
+    fuzzy_score = 1.0
+    for name in names:
+        normalized = _normalize_supplier_name(name)
+        if not normalized:
+            continue
+        ratio = difflib.SequenceMatcher(a=wanted, b=normalized).ratio()
+        if ratio > fuzzy_score:
+            fuzzy_score = ratio
+            fuzzy_name = name
+    if fuzzy_score >= 0.75:
+        return fuzzy_name, fuzzy_score
+
+    return '', 0.0
+
+
+def _fetch_supplier_payment_summaries():
+    rows = []
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("supplier_payment_summaries").select("*").limit(5000).execute()
+            if resp.data:
+                rows.extend(resp.data)
+        except Exception as e:
+            logger.error(f"Supabase supplier payment summaries fetch error: {e}")
+    rows.extend(MOCK_DATABASE.get("supplier_payment_summaries", []))
+
+    seen = set()
+    unique = []
+    for r in rows:
+        rid = r.get('id')
+        if not rid or rid in seen:
+            continue
+        seen.add(rid)
+        unique.append(r)
+    return unique
+
+
+def _update_expense_record(expense_id, updates):
+    if SUPABASE_CLIENT:
+        try:
+            SUPABASE_CLIENT.table("expenses").update(updates).eq("id", expense_id).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Supabase expense update error for {expense_id}: {e}")
+            return False
+    for record in MOCK_DATABASE.get("expenses", []):
+        if record.get('id') == expense_id:
+            record.update(updates)
+            save_db()
+            return True
+    return False
+
+
+def _insert_supplier_payment_summary(record):
+    import json as _json
+    payload = dict(record)
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("supplier_payment_summaries").insert(payload).execute()
+            if resp.data:
+                return resp.data[0]
+        except Exception as e:
+            logger.error(f"Supabase supplier payment summary insert error: {e}")
+            MOCK_DATABASE.setdefault("supplier_payment_summaries", []).append(payload)
+            save_db()
+            return payload
+    MOCK_DATABASE.setdefault("supplier_payment_summaries", []).append(payload)
+    save_db()
+    return payload
+
+
+def _compute_supplier_payment_summary(supplier_kw, start_date='', end_date='', include_paid=False):
+    all_expenses = _fetch_all_expenses()
+    matched_name, score = _resolve_supplier_name(supplier_kw, all_expenses)
+    if not matched_name:
+        return {
+            "success": True,
+            "supplier_name": supplier_kw,
+            "matched": False,
+            "transactions": [],
+            "total_amount": 0,
+            "advance_amount": 0,
+            "balance_amount": 0,
+            "advance_carried_forward": 0,
+            "balance_label": "Balance Amount",
+            "message": f'No supplier found matching "{supplier_kw}"'
+        }
+
+    supplier_records = [
+        r for r in all_expenses
+        if _normalize_supplier_name(r.get('company_name')) == _normalize_supplier_name(matched_name)
+        and str(r.get('category', '')).strip().lower() == 'raw material'
+    ]
+    if start_date:
+        supplier_records = [r for r in supplier_records if str(r.get('date', '')) >= start_date]
+    if end_date:
+        supplier_records = [r for r in supplier_records if str(r.get('date', '')) <= end_date]
+
+    if not include_paid:
+        supplier_records = [r for r in supplier_records if str(r.get('supplier_payment_status', 'unpaid')).strip().lower() != 'paid']
+
+    supplier_records.sort(key=lambda r: str(r.get('date', '')))
+
+    total_amount = sum(float(r.get('total_amount') or 0) for r in supplier_records)
+    advance_amount = sum(float(r.get('advance_amount') or 0) for r in supplier_records)
+    if advance_amount > total_amount:
+        advance_deducted = total_amount
+        balance_amount = 0.0
+        advance_carried_forward = round(advance_amount - total_amount, 2)
+        balance_label = "Advance Carried Forward"
+        display_balance = advance_carried_forward
+    else:
+        advance_deducted = advance_amount
+        balance_amount = round(total_amount - advance_amount, 2)
+        advance_carried_forward = 0.0
+        balance_label = "Balance Amount"
+        display_balance = balance_amount
+
+    transactions = []
+    for idx, record in enumerate(supplier_records, start=1):
+        transactions.append({
+            "id": record.get('id'),
+            "reference": record.get('id'),
+            "material_type": record.get('material_type') or '—',
+            "quantity": float(record.get('quantity') or 0),
+            "price": float(record.get('total_amount') or 0),
+            "delivery_date": record.get('date') or '',
+            "advance": float(record.get('advance_amount') or 0),
+            "status": record.get('supplier_payment_status') or 'unpaid'
+        })
+
+    return {
+        "success": True,
+        "matched": True,
+        "supplier_name": matched_name,
+        "match_score": round(score, 3),
+        "transactions": transactions,
+        "transaction_ids": [t['id'] for t in transactions],
+        "total_amount": round(total_amount, 2),
+        "advance_amount": round(advance_amount, 2),
+        "advance_deducted": round(advance_deducted, 2),
+        "balance_amount": round(balance_amount, 2),
+        "advance_carried_forward": round(advance_carried_forward, 2),
+        "display_balance": round(display_balance, 2),
+        "balance_label": balance_label,
+        "record_count": len(transactions),
+        "period": {
+            "start": start_date or None,
+            "end": end_date or None
+        }
+    }
+
+
+def _build_supplier_payment_pdf(summary, statement_number, statement_date):
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from datetime import datetime as dt2
+    import re
+
+    buffer = BytesIO()
+    W, H = A4
+    c = pdf_canvas.Canvas(buffer, pagesize=A4)
+
+    GOLD = colors.HexColor('#D4AF37')
+    DARK = colors.HexColor('#1a1a1a')
+    GRAY = colors.HexColor('#555555')
+    GREEN = colors.HexColor('#16a34a')
+    AMBER = colors.HexColor('#d97706')
+    RED = colors.HexColor('#dc2626')
+
+    logo_path = os.path.join(os.path.dirname(__file__), 'static', 'images', 'logo.png')
+    supplier_name = summary.get('supplier_name', '')
+    transactions = summary.get('transactions', [])
+
+    def draw_header():
+        c.setFillColor(GOLD)
+        c.rect(0, H - 90, W, 90, fill=1, stroke=0)
+        c.setFillColor(DARK)
+        if os.path.exists(logo_path):
+            try:
+                c.drawImage(logo_path, 30, H - 80, width=70, height=70, preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+        c.setFont('Helvetica-Bold', 18)
+        c.drawString(110, H - 50, 'SUPPLIER PAYMENT STATEMENT')
+        c.setFont('Helvetica', 9)
+        c.drawString(110, H - 65, 'R SUNDARAM & CO | Quarry Rd, Tiruneermalai, Chennai')
+        c.drawString(110, H - 78, 'Phone: 9940270304 | Email: rsundaram&co@gmail.com')
+
+    def draw_footer(page_num):
+        c.setFont('Helvetica', 7)
+        c.setFillColor(GRAY)
+        c.drawString(30, 20, f'Generated: {dt2.now().strftime("%d %b %Y %H:%M")}')
+        c.drawRightString(W - 30, 20, f'Page {page_num}')
+
+    draw_header()
+    c.setFont('Helvetica-Bold', 10)
+    c.setFillColor(DARK)
+    c.drawString(30, H - 115, f'Supplier: {supplier_name}')
+    c.drawString(30, H - 130, f'Statement No: {statement_number}')
+    c.drawString(30, H - 145, f'Statement Date: {statement_date}')
+    period_text = 'Period: '
+    if summary.get('period', {}).get('start') and summary.get('period', {}).get('end'):
+        period_text += f"{summary['period']['start']} to {summary['period']['end']}"
+    else:
+        period_text += 'All time'
+    c.setFont('Helvetica', 9)
+    c.setFillColor(GRAY)
+    c.drawString(30, H - 160, period_text)
+
+    table_top = H - 190
+    row_height = 20
+    c.setFont('Helvetica-Bold', 9)
+    c.setFillColor(GOLD)
+    cols = [30, 90, 240, 360, 430, 520]
+    headers = ['#', 'Ref / ID', 'Material', 'Qty', 'Price (₹)', 'Delivery Date']
+    for idx, header in enumerate(headers):
+        c.drawString(cols[idx], table_top, header)
+    c.setStrokeColor(GOLD)
+    c.line(30, table_top - 4, W - 30, table_top - 4)
+
+    c.setFont('Helvetica', 9)
+    y = table_top - 22
+    for i, tx in enumerate(transactions, start=1):
+        if y < 90:
+            draw_footer(1)
+            c.showPage()
+            draw_header()
+            y = H - 100
+        c.drawString(cols[0], y, str(i))
+        c.drawString(cols[1], y, str(tx.get('reference', '—')))
+        c.drawString(cols[2], y, str(tx.get('material_type', '—')))
+        c.drawRightString(cols[3] + 40, y, f"{tx.get('quantity', 0):,.2f}")
+        c.drawRightString(cols[4] + 40, y, f"{tx.get('price', 0):,.2f}")
+        c.drawString(cols[5], y, str(tx.get('delivery_date', '—')))
+        y -= row_height
+
+    if y < 140:
+        c.showPage()
+        draw_header()
+        y = H - 110
+
+    c.setLineWidth(1)
+    c.setStrokeColor(GOLD)
+    c.line(30, y - 8, W - 30, y - 8)
+    y -= 18
+    c.setFont('Helvetica-Bold', 10)
+    c.drawString(30, y, f"Total Amount: ₹ {summary.get('total_amount', 0):,.2f}")
+    y -= 16
+    c.setFont('Helvetica', 10)
+    c.setFillColor(GREEN)
+    c.drawString(30, y, f"Advance Deducted: ₹ {summary.get('advance_amount', 0):,.2f}")
+    y -= 14
+    if summary.get('advance_carried_forward', 0) > 0:
+        c.setFillColor(AMBER)
+        c.drawString(30, y, f"Advance Carried Forward: ₹ {summary.get('advance_carried_forward', 0):,.2f}")
+    else:
+        c.setFillColor(RED)
+        c.drawString(30, y, f"Balance Payable: ₹ {summary.get('balance_amount', 0):,.2f}")
+
+    draw_footer(1)
+    c.save()
+    buffer.seek(0)
+
+    safe = re.sub(r'[^a-zA-Z0-9_-]', '_', supplier_name)[:24]
+    fname = f"supplier_statement_{safe}_{statement_number}.pdf"
+    return buffer.getvalue(), fname
+
+
+def _insert_client_billing_summary(record):
+    rows = []
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("client_billing_summaries").select("*").limit(5000).execute()
+            if resp.data:
+                rows.extend(resp.data)
+        except Exception as e:
+            logger.error(f"Supabase client_billing_summaries fetch error: {e}")
+    rows.extend(MOCK_DATABASE.get("client_billing_summaries", []))
+
+    # Durable fallback invoices stored as manual_billing grade=CBS-INV
+    for b in _fetch_all_manual_billing():
+        if _is_invoice_record(b):
+            rows.append(_summary_from_invoice_row(b))
+
+    # Dedupe by id (dedicated table wins over fallback)
+    seen = set()
+    unique = []
+    for r in rows:
+        rid = r.get('id')
+        if not rid or rid in seen:
+            continue
+        seen.add(rid)
+        unique.append(r)
+    return unique
+
+
+def _update_manual_billing_record(billing_id, updates):
+    """Update a manual_billing row. Falls back if settlement columns are not migrated yet."""
+    if SUPABASE_CLIENT:
+        try:
+            SUPABASE_CLIENT.table("manual_billing").update(updates).eq("id", billing_id).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Supabase billing update error for {billing_id}: {e}")
+            # Retry without settlement-only columns (pre-migration databases)
+            safe = {k: v for k, v in updates.items()
+                    if k not in ('billing_status', 'billing_summary_id')}
+            if safe:
+                try:
+                    SUPABASE_CLIENT.table("manual_billing").update(safe).eq("id", billing_id).execute()
+                    logger.warning(
+                        "Updated without billing_status columns — run migrate_client_billing.sql when possible"
+                    )
+                    return True
+                except Exception as e2:
+                    logger.error(f"Supabase safe billing update error for {billing_id}: {e2}")
+            return False
+    for record in MOCK_DATABASE.get("manual_billing", []):
+        if record.get('id') == billing_id:
+            record.update(updates)
+            save_db()
+            return True
+    return False
+
+
+def _insert_manual_billing_record(record):
+    payload = dict(record)
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("manual_billing").insert(payload).execute()
+            if resp.data:
+                return resp.data[0]
+            return payload
+        except Exception as e:
+            logger.error(f"Supabase billing insert error: {e}")
+            # Retry without settlement-only columns
+            safe = {k: v for k, v in payload.items()
+                    if k not in ('billing_status', 'billing_summary_id')}
+            try:
+                resp = SUPABASE_CLIENT.table("manual_billing").insert(safe).execute()
+                if resp.data:
+                    return resp.data[0]
+                return safe
+            except Exception as e2:
+                logger.error(f"Supabase safe billing insert error: {e2}")
+                MOCK_DATABASE.setdefault("manual_billing", []).append(payload)
+                save_db()
+                return payload
+    MOCK_DATABASE.setdefault("manual_billing", []).append(payload)
+    save_db()
+    return payload
+
+
+def _insert_client_billing_summary(record):
+    """Insert into client_billing_summaries when available, and always mirror as CBS-INV row."""
+    import json as _json
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("client_billing_summaries").insert(record).execute()
+            if resp.data:
+                record = resp.data[0]
+        except Exception as e:
+            logger.error(f"Supabase client_billing_summaries insert error: {e}")
+            MOCK_DATABASE.setdefault("client_billing_summaries", []).append(record)
+            save_db()
+    else:
+        MOCK_DATABASE.setdefault("client_billing_summaries", []).append(record)
+        save_db()
+
+    # Durable fallback that works without the new table (uses existing manual_billing)
+    try:
+        txn_ids = record.get('transaction_ids') or '[]'
+        if isinstance(txn_ids, str):
+            txn_list = _json.loads(txn_ids)
+        else:
+            txn_list = list(txn_ids)
+    except Exception:
+        txn_list = []
+
+    meta = {
+        "invoice_number": record.get('invoice_number'),
+        "bill_date": record.get('bill_date'),
+        "transaction_ids": txn_list,
+        "advance_deducted": record.get('advance_deducted'),
+        "balance_amount": record.get('balance_amount'),
+        "advance_carried_forward": record.get('advance_carried_forward'),
+        "pdf_path": record.get('pdf_path'),
+        "pdf_filename": record.get('pdf_filename'),
+        "notes": record.get('notes'),
+    }
+    inv_row = {
+        "id": record.get('id'),
+        "company_name": record.get('client_name'),
+        "phone": "",
+        "address": _json.dumps(meta, ensure_ascii=False),
+        "date": record.get('bill_date') or datetime.now().strftime('%Y-%m-%d'),
+        "time": datetime.now().strftime('%I:%M %p'),
+        "vehicle_number": record.get('invoice_number') or record.get('id'),
+        "driver_name": "Client Bill",
+        "unloading_time": "N/A",
+        "grade": "CBS-INV",
+        "cubic_meters": 0,
+        "loading_time": "N/A",
+        "rate_per_cubic": 0,
+        "total_amount": record.get('total_amount') or 0,
+        "advance_amount": record.get('advance_deducted') or 0,
+        "balance_amount": record.get('balance_amount') or 0,
+        "created_at": record.get('created_at') or datetime.now().isoformat(),
+        "created_by": record.get('created_by') or 'system',
+    }
+    # Avoid duplicating if this id already exists as CBS-INV
+    existing_ids = {b.get('id') for b in _fetch_all_manual_billing()}
+    if inv_row['id'] not in existing_ids:
+        _insert_manual_billing_record(inv_row)
+    return record
+
+def _compute_client_billing_summary(client_kw, start_date='', end_date='', include_billed=False):
+    """Return summary dict for a client: loads, totals, advance, balance / carry-forward."""
+    all_bills = _fetch_all_manual_billing()
+    matched_name, score = _resolve_client_name(client_kw, all_bills)
+    if not matched_name:
+        return {
+            "success": True,
+            "client_name": client_kw,
+            "matched": False,
+            "transactions": [],
+            "total_amount": 0,
+            "advance_amount": 0,
+            "balance_amount": 0,
+            "advance_carried_forward": 0,
+            "balance_label": "Balance Amount",
+            "message": f'No client found matching "{client_kw}"'
+        }
+
+    billed_ids = _collect_billed_transaction_ids()
+    client_bills = [
+        b for b in all_bills
+        if _normalize_client_name(b.get('company_name')) == _normalize_client_name(matched_name)
+        and not _is_invoice_record(b)
+    ]
+    if start_date:
+        client_bills = [b for b in client_bills if str(b.get('date', '')) >= start_date]
+    if end_date:
+        client_bills = [b for b in client_bills if str(b.get('date', '')) <= end_date]
+
+    if not include_billed:
+        client_bills = [b for b in client_bills if _is_unbilled_record(b, billed_ids)]
+
+    client_bills.sort(key=lambda x: str(x.get('date', '')))
+
+    # Advances sum across ALL unbilled rows (including carry-forward credits)
+    advance_amount = sum(float(b.get('advance_amount') or 0) for b in client_bills)
+
+    # Load lines exclude pure advance-carry rows
+    load_rows = [b for b in client_bills if not _is_advance_carry_record(b)]
+    total_amount = sum(float(b.get('total_amount') or 0) for b in load_rows)
+
+    if advance_amount > total_amount:
+        advance_deducted = total_amount
+        balance_amount = 0.0
+        advance_carried_forward = round(advance_amount - total_amount, 2)
+        balance_label = "Advance Carried Forward"
+        display_balance = advance_carried_forward
+    else:
+        advance_deducted = advance_amount
+        balance_amount = round(total_amount - advance_amount, 2)
+        advance_carried_forward = 0.0
+        balance_label = "Balance Amount"
+        display_balance = balance_amount
+
+    transactions = []
+    for idx, b in enumerate(load_rows, start=1):
+        transactions.append({
+            "id": b.get('id'),
+            "load_no": idx,
+            "m_number": b.get('grade') or '—',
+            "delivery_date": b.get('date') or '',
+            "price": float(b.get('total_amount') or 0),
+            "cubic_meters": float(b.get('cubic_meters') or 0),
+            "rate_per_cubic": float(b.get('rate_per_cubic') or 0),
+            "advance_amount": float(b.get('advance_amount') or 0),
+            "billing_status": b.get('billing_status') or 'unbilled',
+            "vehicle_number": b.get('vehicle_number') or '',
+        })
+
+    phone = next((b.get('phone') for b in client_bills if b.get('phone')), '')
+    address = next((b.get('address') for b in client_bills if b.get('address')), '')
+
+    return {
+        "success": True,
+        "matched": True,
+        "client_name": matched_name,
+        "match_score": round(score, 3),
+        "phone": phone,
+        "address": address,
+        "transactions": transactions,
+        "transaction_ids": [t['id'] for t in transactions],
+        "advance_credit_ids": [b.get('id') for b in client_bills if _is_advance_carry_record(b)],
+        "total_amount": round(total_amount, 2),
+        "advance_amount": round(advance_amount, 2),
+        "advance_deducted": round(advance_deducted, 2),
+        "balance_amount": round(balance_amount, 2),
+        "advance_carried_forward": round(advance_carried_forward, 2),
+        "display_balance": round(display_balance, 2),
+        "balance_label": balance_label,
+        "load_count": len(transactions),
+        "period": {
+            "start": start_date or None,
+            "end": end_date or None
+        }
+    }
+
+
+def _build_client_billing_pdf(summary, invoice_number, bill_date):
+    """Build a client billing invoice PDF (ReportLab). Returns (bytes, filename)."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from datetime import datetime as dt2
+    import re
+
+    buffer = BytesIO()
+    W, H = A4
+    c = pdf_canvas.Canvas(buffer, pagesize=A4)
+
+    GOLD = colors.HexColor('#D4AF37')
+    DARK_GOLD = colors.HexColor('#B8962E')
+    BLACK = colors.HexColor('#1a1a1a')
+    WHITE = colors.white
+    LIGHT_GRAY = colors.HexColor('#f5f5f5')
+    MID_GRAY = colors.HexColor('#e0e0e0')
+    GREEN = colors.HexColor('#16a34a')
+    RED = colors.HexColor('#dc2626')
+    AMBER = colors.HexColor('#d97706')
+
+    logo_path = os.path.join(os.path.dirname(__file__), 'static', 'images', 'logo.png')
+    client_name = summary.get('client_name', '')
+    transactions = summary.get('transactions', [])
+
+    def draw_header(title="CLIENT BILLING INVOICE"):
+        banner_h = 90
+        banner_y = H - banner_h
+        c.setFillColor(GOLD)
+        c.rect(0, banner_y, W, banner_h, fill=1, stroke=0)
+        lbw, lbh = 80, 66
+        lbx, lby = 16, banner_y + (banner_h - lbh) / 2
+        c.setFillColor(BLACK)
+        c.rect(lbx, lby, lbw, lbh, fill=1, stroke=0)
+        if os.path.exists(logo_path):
+            try:
+                c.drawImage(logo_path, lbx + 4, lby + 4, width=lbw - 8, height=lbh - 8,
+                            preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+        cx2 = lbx + lbw + 14
+        cy2 = banner_y + banner_h / 2
+        c.setFont('Helvetica-Bold', 14)
+        c.setFillColor(BLACK)
+        c.drawString(cx2, cy2 + 14, "R SUNDARAM & CO")
+        c.setFont('Helvetica', 8)
+        c.drawString(cx2, cy2 + 2, "STRONG ROADS  BUILD TO LAST")
+        c.drawString(cx2, cy2 - 10, "READYMIX CONCRETE")
+        px2 = W - 160
+        py2 = banner_y + 66
+        c.setFont('Helvetica', 8)
+        c.drawString(px2, py2, "Proprietor")
+        c.setFont('Helvetica-Bold', 11)
+        c.drawString(px2, py2 - 13, "S MAGHESH")
+        c.setFont('Helvetica', 7.5)
+        c.drawString(px2, py2 - 25, "\u25a0 9940270304")
+        c.drawString(px2, py2 - 35, "\u25a0 rsundaram&co@gmail.com")
+        c.drawString(px2, py2 - 45, "\u25a0 Quarry Rd, Tiruneermalai, Chennai")
+        c.setStrokeColor(DARK_GOLD)
+        c.setLineWidth(2)
+        c.line(0, banner_y - 3, W, banner_y - 3)
+        title_y = banner_y - 38
+        c.setFont('Helvetica-Bold', 15)
+        c.setFillColor(GOLD)
+        tw = c.stringWidth(title, 'Helvetica-Bold', 15)
+        c.drawString((W - tw) / 2, title_y, title)
+        c.setStrokeColor(GOLD)
+        c.setLineWidth(1.5)
+        c.line((W - tw) / 2, title_y - 4, (W - tw) / 2 + tw, title_y - 4)
+        return title_y - 28
+
+    def draw_footer(page_num):
+        c.setFillColor(BLACK)
+        c.rect(0, 0, W, 30, fill=1, stroke=0)
+        c.setFont('Helvetica-Bold', 7.5)
+        c.setFillColor(GOLD)
+        c.drawString(30, 18, "R SUNDARAM & CO  \u2022  READYMIX CONCRETE  \u2022  Strong Roads  \u2022  Build To Last")
+        c.setFont('Helvetica', 7)
+        c.setFillColor(colors.HexColor('#888888'))
+        c.drawRightString(W - 30, 18, f"Page {page_num}")
+        c.setStrokeColor(GOLD)
+        c.setLineWidth(1.5)
+        c.rect(10, 10, W - 20, H - 20, fill=0, stroke=1)
+
+    page_num = 1
+    y = draw_header()
+
+    # Meta block
+    c.setFont('Helvetica', 9)
+    c.setFillColor(BLACK)
+    c.drawString(30, y, f"Invoice No: {invoice_number}")
+    c.drawRightString(W - 30, y, f"Bill Date: {bill_date}")
+    y -= 16
+    c.setFont('Helvetica-Bold', 11)
+    c.setFillColor(GOLD)
+    c.drawString(30, y, f"Client: {client_name}")
+    y -= 14
+    if summary.get('phone') or summary.get('address'):
+        c.setFont('Helvetica', 8)
+        c.setFillColor(colors.HexColor('#555555'))
+        meta_bits = []
+        if summary.get('phone'):
+            meta_bits.append(str(summary['phone']))
+        if summary.get('address'):
+            meta_bits.append(str(summary['address'])[:60])
+        c.drawString(30, y, "  |  ".join(meta_bits))
+        y -= 18
+    else:
+        y -= 8
+
+    # Summary cards
+    box_w = (W - 70) / 3
+    box_h = 48
+    cards = [
+        ("TOTAL AMOUNT", f"\u20b9 {summary['total_amount']:,.2f}", GOLD),
+        ("ADVANCE DEDUCTED", f"\u20b9 {summary['advance_deducted']:,.2f}", GREEN),
+        (summary['balance_label'].upper(), f"\u20b9 {summary['display_balance']:,.2f}",
+         AMBER if summary['advance_carried_forward'] > 0 else RED),
+    ]
+    for i, (label, value, color) in enumerate(cards):
+        x = 30 + i * (box_w + 5)
+        c.setFillColor(colors.HexColor('#222222'))
+        c.setStrokeColor(GOLD)
+        c.setLineWidth(0.8)
+        c.roundRect(x, y - box_h, box_w, box_h, 5, fill=1, stroke=1)
+        c.setFont('Helvetica', 7)
+        c.setFillColor(colors.HexColor('#888888'))
+        c.drawString(x + 10, y - 14, label)
+        c.setFont('Helvetica-Bold', 11)
+        c.setFillColor(color)
+        c.drawString(x + 10, y - box_h + 12, value)
+    y -= box_h + 22
+
+    # Table
+    cols = [
+        ('#', 28),
+        ('M#', 55),
+        ('Delivery Date', 90),
+        ('Qty (m\u00b3)', 70),
+        ('Rate', 80),
+        ('Price \u20b9', 100),
+    ]
+    tbl_x = 30
+    row_h, hdr_h = 18, 20
+
+    def draw_table_header(yy):
+        c.setFillColor(GOLD)
+        c.rect(tbl_x, yy - hdr_h, W - 60, hdr_h, fill=1, stroke=0)
+        cx = tbl_x + 6
+        for label, cw in cols:
+            c.setFont('Helvetica-Bold', 8)
+            c.setFillColor(BLACK)
+            c.drawString(cx, yy - hdr_h + 6, label)
+            cx += cw
+        return yy - hdr_h
+
+    y = draw_table_header(y)
+    for idx, t in enumerate(transactions):
+        if y < 70:
+            draw_footer(page_num)
+            c.showPage()
+            page_num += 1
+            y = draw_header("CLIENT BILLING INVOICE (cont.)")
+            y = draw_table_header(y)
+        bg = LIGHT_GRAY if idx % 2 == 0 else WHITE
+        c.setFillColor(bg)
+        c.rect(tbl_x, y - row_h, W - 60, row_h, fill=1, stroke=0)
+        c.setStrokeColor(MID_GRAY)
+        c.setLineWidth(0.3)
+        c.rect(tbl_x, y - row_h, W - 60, row_h, fill=0, stroke=1)
+        vals = [
+            str(t.get('load_no', idx + 1)),
+            str(t.get('m_number', '—')),
+            str(t.get('delivery_date', '')),
+            f"{float(t.get('cubic_meters') or 0):.2f}",
+            f"\u20b9{float(t.get('rate_per_cubic') or 0):,.0f}",
+            f"\u20b9{float(t.get('price') or 0):,.2f}",
+        ]
+        cx = tbl_x + 6
+        for j, (val, (_, cw)) in enumerate(zip(vals, cols)):
+            c.setFont('Helvetica-Bold' if j == 5 else 'Helvetica', 8)
+            c.setFillColor(BLACK)
+            c.drawString(cx, y - row_h + 5, val)
+            cx += cw
+        y -= row_h
+
+    # Totals row
+    if y < 90:
+        draw_footer(page_num)
+        c.showPage()
+        page_num += 1
+        y = draw_header("CLIENT BILLING INVOICE (cont.)")
+
+    y -= 8
+    c.setFillColor(colors.HexColor('#1a1a1a'))
+    c.rect(tbl_x, y - 70, W - 60, 70, fill=1, stroke=0)
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(1)
+    c.rect(tbl_x, y - 70, W - 60, 70, fill=0, stroke=1)
+    c.setFont('Helvetica-Bold', 9)
+    c.setFillColor(GOLD)
+    c.drawString(tbl_x + 12, y - 18, f"Total Amount: \u20b9 {summary['total_amount']:,.2f}")
+    c.setFillColor(GREEN)
+    c.drawString(tbl_x + 12, y - 34, f"Advance Deducted: \u20b9 {summary['advance_deducted']:,.2f}")
+    if summary['advance_carried_forward'] > 0:
+        c.setFillColor(AMBER)
+        c.drawString(tbl_x + 12, y - 50, f"Advance Carried Forward: \u20b9 {summary['advance_carried_forward']:,.2f}")
+    else:
+        c.setFillColor(RED)
+        c.drawString(tbl_x + 12, y - 50, f"Balance Amount: \u20b9 {summary['balance_amount']:,.2f}")
+    c.setFont('Helvetica', 7)
+    c.setFillColor(colors.HexColor('#888888'))
+    c.drawString(tbl_x + 12, y - 64, f"Generated: {dt2.now().strftime('%d %b %Y %H:%M')}  |  {len(transactions)} load(s)")
+
+    draw_footer(page_num)
+    c.save()
+    buffer.seek(0)
+
+    safe = re.sub(r'[^a-zA-Z0-9_-]', '_', client_name)[:24]
+    fname = f"client_bill_{safe}_{invoice_number}.pdf"
+    return buffer.getvalue(), fname
+
+
+@app.route('/api/client-billing-summary', methods=['GET'])
+def client_billing_summary():
+    """Search unbilled loads for a client and return totals + advance deduction preview."""
+    if 'username' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    client = request.args.get('client', '').strip()
+    start_date = request.args.get('start', '').strip()
+    end_date = request.args.get('end', '').strip()
+    include_billed = request.args.get('include_billed', '').lower() in ('1', 'true', 'yes')
+
+    if not client:
+        return jsonify({"error": "client name is required"}), 400
+
+    try:
+        summary = _compute_client_billing_summary(client, start_date, end_date, include_billed)
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"Client billing summary error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/client-billing-summary/history', methods=['GET'])
+def client_billing_summary_history():
+    """List previously generated client billing invoices."""
+    if 'username' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    client = request.args.get('client', '').strip()
+    try:
+        rows = _fetch_client_billing_summaries()
+        if client:
+            wanted = _normalize_client_name(client)
+            rows = [r for r in rows if wanted in _normalize_client_name(r.get('client_name'))
+                    or _normalize_client_name(r.get('client_name')) == wanted]
+        rows.sort(key=lambda r: str(r.get('bill_date') or r.get('created_at') or ''), reverse=True)
+        return jsonify({"success": True, "data": rows})
+    except Exception as e:
+        logger.error(f"Client billing history error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+def _apply_advance_override(summary, advance_amount):
+    """Recalculate deduction / balance / carry-forward from a manual advance amount."""
+    total = float(summary.get('total_amount') or 0)
+    advance = max(0.0, float(advance_amount or 0))
+    summary['advance_amount'] = round(advance, 2)
+    if advance > total:
+        summary['advance_deducted'] = round(total, 2)
+        summary['balance_amount'] = 0.0
+        summary['advance_carried_forward'] = round(advance - total, 2)
+        summary['display_balance'] = summary['advance_carried_forward']
+        summary['balance_label'] = "Advance Carried Forward"
+    else:
+        summary['advance_deducted'] = round(advance, 2)
+        summary['balance_amount'] = round(total - advance, 2)
+        summary['advance_carried_forward'] = 0.0
+        summary['display_balance'] = summary['balance_amount']
+        summary['balance_label'] = "Balance Amount"
+    return summary
+
+
+@app.route('/api/client-billing-summary/confirm', methods=['POST'])
+def client_billing_summary_confirm():
+    """
+    Confirm settlement for a client's unbilled loads:
+    - Mark loads as billed (prevents duplicate billing)
+    - Consume advances; create ADV-CF row if advance exceeds total
+    - Generate invoice PDF and store path + metadata
+    """
+    if 'username' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.json or {}
+    if not data.get('confirm'):
+        return jsonify({"error": "Confirmation required. Set confirm=true to settle."}), 400
+
+    client = (data.get('client') or data.get('client_name') or '').strip()
+    start_date = (data.get('start') or '').strip()
+    end_date = (data.get('end') or '').strip()
+    requested_ids = data.get('transaction_ids')  # optional subset
+    advance_override = data.get('advance_amount', None)
+
+    if not client:
+        return jsonify({"error": "client name is required"}), 400
+
+    try:
+        summary = _compute_client_billing_summary(client, start_date, end_date, include_billed=False)
+        if not summary.get('matched'):
+            return jsonify({"error": summary.get('message', 'Client not found')}), 404
+
+        txn_ids = list(summary.get('transaction_ids') or [])
+        credit_ids = list(summary.get('advance_credit_ids') or [])
+
+        if requested_ids is not None:
+            requested_set = set(requested_ids)
+            # Only allow settling currently unbilled ids from this summary
+            txn_ids = [i for i in txn_ids if i in requested_set]
+            # Recompute totals for the subset
+            all_bills = _fetch_all_manual_billing()
+            billed_ids = _collect_billed_transaction_ids()
+            id_map = {b.get('id'): b for b in all_bills}
+            subset = [id_map[i] for i in txn_ids if i in id_map and _is_unbilled_record(id_map[i], billed_ids)]
+            if not subset and not credit_ids:
+                return jsonify({"error": "No unbilled transactions selected"}), 400
+            summary['transactions'] = []
+            for idx, b in enumerate(subset, start=1):
+                summary['transactions'].append({
+                    "id": b.get('id'),
+                    "load_no": idx,
+                    "m_number": b.get('grade') or '—',
+                    "delivery_date": b.get('date') or '',
+                    "price": float(b.get('total_amount') or 0),
+                    "cubic_meters": float(b.get('cubic_meters') or 0),
+                    "rate_per_cubic": float(b.get('rate_per_cubic') or 0),
+                })
+            summary['transaction_ids'] = [t['id'] for t in summary['transactions']]
+            summary['total_amount'] = round(sum(t['price'] for t in summary['transactions']), 2)
+            txn_ids = summary['transaction_ids']
+
+        # Manual advance from UI overrides sum of per-load advances
+        try:
+            if advance_override is not None:
+                _apply_advance_override(summary, advance_override)
+            else:
+                _apply_advance_override(summary, summary.get('advance_amount', 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid advance_amount"}), 400
+
+        if not txn_ids and summary.get('advance_amount', 0) <= 0:
+            return jsonify({"error": "No unbilled loads to settle for this client"}), 400
+
+        # Re-verify none are already billed (race / duplicate guard)
+        all_bills = _fetch_all_manual_billing()
+        billed_ids = _collect_billed_transaction_ids()
+        id_map = {b.get('id'): b for b in all_bills}
+        already_billed = [i for i in txn_ids if i in id_map and not _is_unbilled_record(id_map[i], billed_ids)]
+        if already_billed:
+            return jsonify({
+                "error": "Some loads were already billed. Refresh and try again.",
+                "already_billed_ids": already_billed
+            }), 409
+
+        bill_date = datetime.now().strftime('%Y-%m-%d')
+        invoice_number = f"CBS-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        summary_id = f"cbs-{uuid.uuid4().hex[:10]}"
+
+        pdf_bytes, pdf_filename = _build_client_billing_pdf(summary, invoice_number, bill_date)
+
+        # Persist PDF to disk when possible
+        pdf_path = None
+        try:
+            os.makedirs(BILLING_PDF_DIR, exist_ok=True)
+            abs_path = os.path.join(BILLING_PDF_DIR, pdf_filename)
+            with open(abs_path, 'wb') as f:
+                f.write(pdf_bytes)
+            pdf_path = abs_path
+        except Exception as e:
+            logger.warning(f"Could not save billing PDF to disk: {e}")
+            pdf_path = f"memory:{pdf_filename}"
+
+        import json as _json
+        summary_record = {
+            "id": summary_id,
+            "invoice_number": invoice_number,
+            "client_name": summary['client_name'],
+            "bill_date": bill_date,
+            "total_amount": summary['total_amount'],
+            "advance_deducted": summary['advance_deducted'],
+            "balance_amount": summary['balance_amount'],
+            "advance_carried_forward": summary['advance_carried_forward'],
+            "transaction_ids": _json.dumps(txn_ids + credit_ids),
+            "pdf_path": pdf_path,
+            "pdf_filename": pdf_filename,
+            "notes": summary.get('balance_label'),
+            "created_at": datetime.now().isoformat(),
+            "created_by": session.get('username', 'system'),
+        }
+        _insert_client_billing_summary(summary_record)
+
+        # Mark load rows as billed and zero their advances (consumed in this cycle)
+        for tid in txn_ids:
+            _update_manual_billing_record(tid, {
+                "billing_status": "billed",
+                "billing_summary_id": summary_id,
+                "advance_amount": 0,
+                "balance_amount": 0,
+            })
+
+        # Consume prior ADV-CF credit rows so advances aren't deducted twice
+        for cid in credit_ids:
+            _update_manual_billing_record(cid, {
+                "billing_status": "billed",
+                "billing_summary_id": summary_id,
+                "advance_amount": 0,
+                "balance_amount": 0,
+            })
+
+        # Carry forward leftover advance as a new unbilled credit row
+        if summary['advance_carried_forward'] > 0:
+            cf_record = {
+                "id": f"bill-{uuid.uuid4().hex[:8]}",
+                "company_name": summary['client_name'],
+                "phone": summary.get('phone') or '',
+                "address": summary.get('address') or '',
+                "date": bill_date,
+                "time": datetime.now().strftime('%I:%M %p'),
+                "vehicle_number": "N/A",
+                "driver_name": "System",
+                "unloading_time": "N/A",
+                "grade": "ADV-CF",
+                "cubic_meters": 0,
+                "loading_time": "N/A",
+                "rate_per_cubic": 0,
+                "total_amount": 0,
+                "advance_amount": summary['advance_carried_forward'],
+                "balance_amount": 0,
+                "billing_status": "unbilled",
+                "billing_summary_id": None,
+                "created_at": datetime.now().isoformat(),
+                "created_by": session.get('username', 'system'),
+            }
+            _insert_manual_billing_record(cf_record)
+
+        # Keep PDF bytes in a short-lived memory cache keyed by summary id for immediate download
+        if not hasattr(app, '_billing_pdf_cache'):
+            app._billing_pdf_cache = {}
+        app._billing_pdf_cache[summary_id] = pdf_bytes
+
+        return jsonify({
+            "success": True,
+            "message": "Bill confirmed and generated successfully",
+            "invoice": summary_record,
+            "summary": {
+                "client_name": summary['client_name'],
+                "total_amount": summary['total_amount'],
+                "advance_deducted": summary['advance_deducted'],
+                "balance_amount": summary['balance_amount'],
+                "advance_carried_forward": summary['advance_carried_forward'],
+                "balance_label": summary['balance_label'],
+                "loads_settled": len(txn_ids),
+            },
+            "pdf_url": f"/api/client-billing-summary/{summary_id}/pdf",
+        })
+    except Exception as e:
+        logger.error(f"Client billing confirm error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/client-billing-summary/<summary_id>/pdf', methods=['GET'])
+def client_billing_summary_pdf(summary_id):
+    """Download a previously generated (or cached) client billing PDF."""
+    if 'username' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    if session.get('role') not in ['admin', 'manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        # Memory cache (just-generated)
+        cache = getattr(app, '_billing_pdf_cache', {})
+        if summary_id in cache:
+            rows = _fetch_client_billing_summaries()
+            rec = next((r for r in rows if r.get('id') == summary_id), None)
+            fname = (rec or {}).get('pdf_filename') or f"{summary_id}.pdf"
+            resp = make_response(cache[summary_id])
+            resp.headers['Content-Type'] = 'application/pdf'
+            resp.headers['Content-Disposition'] = f'inline; filename={fname}'
+            return resp
+
+        rows = _fetch_client_billing_summaries()
+        rec = next((r for r in rows if r.get('id') == summary_id), None)
+        if not rec:
+            return jsonify({"error": "Billing summary not found"}), 404
+
+        pdf_path = rec.get('pdf_path') or ''
+        fname = rec.get('pdf_filename') or f"{summary_id}.pdf"
+
+        if pdf_path and not pdf_path.startswith('memory:') and os.path.exists(pdf_path):
+            with open(pdf_path, 'rb') as f:
+                pdf_bytes = f.read()
+            resp = make_response(pdf_bytes)
+            resp.headers['Content-Type'] = 'application/pdf'
+            resp.headers['Content-Disposition'] = f'inline; filename={fname}'
+            return resp
+
+        # Fallback: regenerate from stored metadata + still-billed loads
+        import json as _json
+        try:
+            txn_ids = _json.loads(rec.get('transaction_ids') or '[]')
+        except Exception:
+            txn_ids = []
+        all_bills = _fetch_all_manual_billing()
+        loads = [b for b in all_bills if b.get('id') in txn_ids and not _is_advance_carry_record(b)]
+        loads.sort(key=lambda x: str(x.get('date', '')))
+        transactions = []
+        for idx, b in enumerate(loads, start=1):
+            transactions.append({
+                "id": b.get('id'),
+                "load_no": idx,
+                "m_number": b.get('grade') or '—',
+                "delivery_date": b.get('date') or '',
+                "price": float(b.get('total_amount') or 0),
+                "cubic_meters": float(b.get('cubic_meters') or 0),
+                "rate_per_cubic": float(b.get('rate_per_cubic') or 0),
+            })
+        regen = {
+            "client_name": rec.get('client_name'),
+            "phone": '',
+            "address": '',
+            "transactions": transactions,
+            "total_amount": float(rec.get('total_amount') or 0),
+            "advance_deducted": float(rec.get('advance_deducted') or 0),
+            "balance_amount": float(rec.get('balance_amount') or 0),
+            "advance_carried_forward": float(rec.get('advance_carried_forward') or 0),
+            "display_balance": float(rec.get('advance_carried_forward') or 0) or float(rec.get('balance_amount') or 0),
+            "balance_label": "Advance Carried Forward" if float(rec.get('advance_carried_forward') or 0) > 0 else "Balance Amount",
+        }
+        pdf_bytes, fname = _build_client_billing_pdf(
+            regen, rec.get('invoice_number') or summary_id, rec.get('bill_date') or ''
+        )
+        resp = make_response(pdf_bytes)
+        resp.headers['Content-Type'] = 'application/pdf'
+        resp.headers['Content-Disposition'] = f'inline; filename={fname}'
+        return resp
+    except Exception as e:
+        logger.error(f"Client billing PDF error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 

@@ -8,4 +8,16 @@ __pycache__/
 .vscode/
 data/
 *.db
+*.MP4
+*.mp4
 static/videos/DJI_20260501091347_0752_D.MP4
+check_companies.py
+cim.c
+fix_quality_migration.py
+run_schema.py
+test_login.py
+test_supabase.py
+test_tables.py
+update_hashes.py
+update_passwords.py
+_test_*.py
