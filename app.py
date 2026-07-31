@@ -4602,7 +4602,7 @@ def _build_supplier_payment_pdf(summary, statement_number, statement_date):
     return buffer.getvalue(), fname
 
 
-def _insert_client_billing_summary(record):
+def _fetch_client_billing_summaries():
     rows = []
     if SUPABASE_CLIENT:
         try:
