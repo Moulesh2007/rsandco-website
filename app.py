@@ -2097,6 +2097,7 @@ def supplier_payment_summary_confirm():
     start_date = (data.get('start') or '').strip()
     end_date = (data.get('end') or '').strip()
     requested_ids = data.get('transaction_ids')
+    advance_override = data.get('advance_amount', None)  # overall advance override from UI
 
     if not supplier:
         return jsonify({"error": "Supplier name is required"}), 400
@@ -2113,19 +2114,27 @@ def supplier_payment_summary_confirm():
             summary['transactions'] = [t for t in summary['transactions'] if t['id'] in txn_ids]
             summary['transaction_ids'] = txn_ids
             summary['total_amount'] = round(sum(t['price'] for t in summary['transactions']), 2)
-            summary['advance_amount'] = round(sum(float(next((r.get('advance_amount') for r in _fetch_all_expenses() if r.get('id') == t['id']), 0)) for t in summary['transactions']), 2)
-            if summary['advance_amount'] > summary['total_amount']:
-                summary['advance_deducted'] = round(summary['total_amount'], 2)
-                summary['balance_amount'] = 0.0
-                summary['advance_carried_forward'] = round(summary['advance_amount'] - summary['total_amount'], 2)
-                summary['balance_label'] = 'Advance Carried Forward'
-                summary['display_balance'] = summary['advance_carried_forward']
-            else:
-                summary['advance_deducted'] = round(summary['advance_amount'], 2)
-                summary['balance_amount'] = round(summary['total_amount'] - summary['advance_amount'], 2)
-                summary['advance_carried_forward'] = 0.0
-                summary['balance_label'] = 'Balance Amount'
-                summary['display_balance'] = summary['balance_amount']
+
+        # Apply overall advance override (from UI) if provided; else use per-transaction sum
+        total = float(summary['total_amount'])
+        if advance_override is not None:
+            advance = max(0.0, float(advance_override))
+        else:
+            advance = float(summary.get('advance_amount') or 0)
+
+        summary['advance_amount'] = round(advance, 2)
+        if advance > total:
+            summary['advance_deducted'] = round(total, 2)
+            summary['balance_amount'] = 0.0
+            summary['advance_carried_forward'] = round(advance - total, 2)
+            summary['balance_label'] = 'Advance Carried Forward'
+            summary['display_balance'] = summary['advance_carried_forward']
+        else:
+            summary['advance_deducted'] = round(advance, 2)
+            summary['balance_amount'] = round(total - advance, 2)
+            summary['advance_carried_forward'] = 0.0
+            summary['balance_label'] = 'Balance Amount'
+            summary['display_balance'] = summary['balance_amount']
 
         statement_date = datetime.now().strftime('%Y-%m-%d')
         statement_number = f"SPS-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
@@ -4580,11 +4589,12 @@ def _build_supplier_payment_pdf(summary, statement_number, statement_date):
     c.line(30, y - 8, W - 30, y - 8)
     y -= 18
     c.setFont('Helvetica-Bold', 10)
+    c.setFillColor(DARK)
     c.drawString(30, y, f"Total Amount: ₹ {summary.get('total_amount', 0):,.2f}")
     y -= 16
     c.setFont('Helvetica', 10)
     c.setFillColor(GREEN)
-    c.drawString(30, y, f"Advance Deducted: ₹ {summary.get('advance_amount', 0):,.2f}")
+    c.drawString(30, y, f"Advance Deducted: ₹ {summary.get('advance_deducted', summary.get('advance_amount', 0)):,.2f}")
     y -= 14
     if summary.get('advance_carried_forward', 0) > 0:
         c.setFillColor(AMBER)

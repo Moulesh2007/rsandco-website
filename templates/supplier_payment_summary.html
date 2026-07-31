@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supplier Payment Summary | RS &amp; CO</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .advance-override-box {
+            background: linear-gradient(135deg, rgba(212,175,55,0.12) 0%, rgba(212,175,55,0.04) 100%);
+            border: 1.5px solid #D4AF37;
+            border-radius: 10px;
+            padding: 18px 22px;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .advance-override-box label {
+            color: #D4AF37;
+            font-weight: 700;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .advance-override-box input[type="number"] {
+            background: #1a1a1a;
+            border: 1.5px solid #D4AF37;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 15px;
+            padding: 8px 14px;
+            width: 180px;
+            outline: none;
+            transition: box-shadow 0.2s;
+        }
+        .advance-override-box input[type="number"]:focus {
+            box-shadow: 0 0 0 2px rgba(212,175,55,0.35);
+        }
+        .advance-override-box .hint {
+            color: #aaa;
+            font-size: 12px;
+            flex: 1;
+            min-width: 200px;
+        }
+        .balance-recalc {
+            margin-top: 10px;
+            padding: 12px 18px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.04);
+            display: flex;
+            gap: 28px;
+            flex-wrap: wrap;
+            font-size: 13px;
+        }
+        .balance-recalc .item { display: flex; flex-direction: column; gap: 2px; }
+        .balance-recalc .item .lbl { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+        .balance-recalc .item .val { color: #fff; font-weight: 700; font-size: 15px; }
+        .balance-recalc .item .val.green { color: #4ade80; }
+        .balance-recalc .item .val.amber { color: #fbbf24; }
+        .balance-recalc .item .val.red   { color: #f87171; }
+        .balance-recalc .item .val.gold  { color: #D4AF37; }
+        .stat-card h3 { font-size: 12px; color: #aaa; margin-bottom: 4px; }
+        .stat-card .value { font-size: 22px; font-weight: 700; color: #D4AF37; }
+    </style>
+</head>
+<body>
+    <div class="billing-expense-container">
+        <div class="section-header">
+            <h1>Supplier Payment Summary</h1>
+            <p>Search suppliers, review raw material expenses, and confirm payment statements with PDF generation.</p>
+        </div>
+
+        <!-- Supplier Lookup -->
+        <div class="expense-form-section">
+            <h3>Supplier Lookup</h3>
+            <div class="form-grid">
+                <div class="form-group">
+                    <input type="text" id="supplier-name" placeholder=" ">
+                    <label>Supplier Name *</label>
+                </div>
+                <div class="form-group">
+                    <input type="date" id="supplier-start-date" placeholder=" ">
+                    <label>Start Date (Optional)</label>
+                </div>
+                <div class="form-group">
+                    <input type="date" id="supplier-end-date" placeholder=" ">
+                    <label>End Date (Optional)</label>
+                </div>
+                <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+                    <input type="checkbox" id="supplier-include-paid">
+                    <label for="supplier-include-paid" style="position:static;top:auto;left:auto;color:#fff;">Include Paid</label>
+                </div>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+                <button class="btn-primary" onclick="lookupSupplierPayment()">Search Supplier</button>
+                <button class="btn-secondary" onclick="clearSupplierSearch()">Clear</button>
+                <span id="supplier-status" style="font-size:13px;color:#D4AF37;"></span>
+            </div>
+        </div>
+
+        <!-- Summary Panel -->
+        <div id="supplier-summary" style="display:none;">
+            <!-- Stat Cards -->
+            <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:20px;">
+                <div class="stat-card"><h3>Supplier</h3><div class="value" id="supplier-name-value" style="font-size:16px;">—</div></div>
+                <div class="stat-card"><h3>Total Amount</h3><div class="value" id="supplier-total">₹0</div></div>
+                <div class="stat-card"><h3>Overall Advance</h3><div class="value" id="supplier-advance">₹0</div></div>
+                <div class="stat-card"><h3 id="supplier-balance-label">Balance</h3><div class="value" id="supplier-balance">₹0</div></div>
+            </div>
+
+            <!-- Overall Advance Override -->
+            <div class="advance-override-box">
+                <label>⚡ Overall Advance Deduction (₹)</label>
+                <input type="number" id="advance-override-input" min="0" step="0.01" placeholder="0.00"
+                       oninput="recalcFromAdvance()" />
+                <div class="hint">
+                    Auto-filled from sum of per-transaction advances. You can override this with the total
+                    advance amount paid to this supplier before confirming the statement.
+                </div>
+            </div>
+
+            <!-- Live Recalculation Bar -->
+            <div class="balance-recalc" id="balance-recalc-bar">
+                <div class="item">
+                    <span class="lbl">Total Bill</span>
+                    <span class="val gold" id="rc-total">₹0.00</span>
+                </div>
+                <div class="item">
+                    <span class="lbl">Advance Deducted</span>
+                    <span class="val green" id="rc-advance">₹0.00</span>
+                </div>
+                <div class="item">
+                    <span class="lbl">Balance Payable</span>
+                    <span class="val red" id="rc-balance">₹0.00</span>
+                </div>
+                <div class="item" id="rc-cf-item" style="display:none;">
+                    <span class="lbl">Advance Carried Forward</span>
+                    <span class="val amber" id="rc-cf">₹0.00</span>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:18px;">
+                <button class="btn-primary" onclick="confirmSupplierStatement()">✓ Confirm &amp; Generate PDF</button>
+                <button class="btn-secondary" onclick="loadSupplierHistory()">Load History</button>
+            </div>
+
+            <!-- Transactions Table -->
+            <div style="overflow-x:auto;margin-top:22px;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Expense ID</th>
+                            <th>Material</th>
+                            <th>Qty</th>
+                            <th>Amount (₹)</th>
+                            <th>Delivery Date</th>
+                            <th>Advance (₹)</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="supplier-transactions"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- History -->
+        <div class="expense-form-section" style="margin-top:32px;">
+            <h3>Supplier Statements History</h3>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Statement No</th>
+                            <th>Supplier</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Advance Deducted</th>
+                            <th>Balance / CF</th>
+                            <th>PDF</th>
+                        </tr>
+                    </thead>
+                    <tbody id="supplier-history-body">
+                        <tr><td colspan="7" style="color:#888;padding:16px;">No history loaded yet.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* ── State ─────────────────────────────────────── */
+        let _supplierTotal = 0;   // total bill from API
+
+        /* ── Helpers ───────────────────────────────────── */
+        const fmt = n => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+        function recalcFromAdvance() {
+            const advance  = Math.max(0, parseFloat(document.getElementById('advance-override-input').value) || 0);
+            const total    = _supplierTotal;
+
+            let advanceDeducted, balance, carriedFwd;
+            if (advance > total) {
+                advanceDeducted = total;
+                balance         = 0;
+                carriedFwd      = parseFloat((advance - total).toFixed(2));
+            } else {
+                advanceDeducted = advance;
+                balance         = parseFloat((total - advance).toFixed(2));
+                carriedFwd      = 0;
+            }
+
+            /* stat cards */
+            document.getElementById('supplier-advance').textContent = fmt(advance);
+            document.getElementById('supplier-balance-label').textContent = carriedFwd > 0 ? 'Advance Carried Forward' : 'Balance Amount';
+            document.getElementById('supplier-balance').textContent = fmt(carriedFwd > 0 ? carriedFwd : balance);
+
+            /* live bar */
+            document.getElementById('rc-total').textContent   = fmt(total);
+            document.getElementById('rc-advance').textContent = fmt(advanceDeducted);
+            document.getElementById('rc-balance').textContent = fmt(balance);
+            document.getElementById('rc-cf').textContent      = fmt(carriedFwd);
+            document.getElementById('rc-cf-item').style.display = carriedFwd > 0 ? '' : 'none';
+        }
+
+        /* ── Search ────────────────────────────────────── */
+        async function lookupSupplierPayment() {
+            const supplier   = document.getElementById('supplier-name').value.trim();
+            const start      = document.getElementById('supplier-start-date').value;
+            const end        = document.getElementById('supplier-end-date').value;
+            const includePaid = document.getElementById('supplier-include-paid').checked;
+            const statusEl   = document.getElementById('supplier-status');
+
+            if (!supplier) { alert('Please enter a supplier name.'); return; }
+            statusEl.textContent = 'Searching…';
+
+            let url = `/api/supplier-payment-summary?supplier=${encodeURIComponent(supplier)}`;
+            if (start) url += `&start=${encodeURIComponent(start)}`;
+            if (end)   url += `&end=${encodeURIComponent(end)}`;
+            if (includePaid) url += `&include_paid=true`;
+
+            try {
+                const res  = await fetch(url);
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    statusEl.textContent = data.error || data.message || 'Unable to fetch supplier data';
+                    document.getElementById('supplier-summary').style.display = 'none';
+                    return;
+                }
+                if (!data.matched) {
+                    statusEl.textContent = data.message || 'No matching supplier found';
+                    document.getElementById('supplier-summary').style.display = 'none';
+                    return;
+                }
+
+                statusEl.textContent = `Matched: ${data.supplier_name}`;
+                _supplierTotal = parseFloat(data.total_amount || 0);
+
+                /* populate header cards */
+                document.getElementById('supplier-name-value').textContent = data.supplier_name;
+                document.getElementById('supplier-total').textContent = fmt(_supplierTotal);
+
+                /* pre-fill overall advance from summed per-transaction advances */
+                const autoAdvance = parseFloat(data.advance_amount || 0);
+                document.getElementById('advance-override-input').value = autoAdvance.toFixed(2);
+
+                /* show panel & recalc */
+                document.getElementById('supplier-summary').style.display = 'block';
+                recalcFromAdvance();
+
+                /* populate table */
+                const rows = (data.transactions || []).map((tx, idx) => `
+                    <tr>
+                        <td>${idx + 1}</td>
+                        <td style="font-size:11px;color:#aaa;">${tx.id || '—'}</td>
+                        <td>${tx.material_type || '—'}</td>
+                        <td>${Number(tx.quantity || 0).toFixed(2)}</td>
+                        <td>₹${Number(tx.price || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                        <td>${tx.delivery_date || '—'}</td>
+                        <td style="color:#4ade80;">₹${Number(tx.advance || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                        <td><span style="padding:2px 8px;border-radius:4px;font-size:11px;background:${tx.status==='paid'?'rgba(74,222,128,.15)':'rgba(248,113,113,.15)'};color:${tx.status==='paid'?'#4ade80':'#f87171'};">${tx.status || 'unpaid'}</span></td>
+                    </tr>`).join('');
+                document.getElementById('supplier-transactions').innerHTML =
+                    rows || '<tr><td colspan="8" style="color:#888;padding:16px;">No transactions found.</td></tr>';
+
+            } catch (err) {
+                statusEl.textContent = 'Search failed';
+                console.error(err);
+            }
+        }
+
+        /* ── Confirm ───────────────────────────────────── */
+        async function confirmSupplierStatement() {
+            const supplier  = document.getElementById('supplier-name').value.trim();
+            const start     = document.getElementById('supplier-start-date').value;
+            const end       = document.getElementById('supplier-end-date').value;
+            const statusEl  = document.getElementById('supplier-status');
+            const advance   = parseFloat(document.getElementById('advance-override-input').value) || 0;
+
+            if (!supplier) { alert('Please enter a supplier name.'); return; }
+            if (!confirm(`Confirm settlement for ${supplier} with overall advance ₹${advance.toLocaleString('en-IN', {minimumFractionDigits:2})} and generate PDF?`)) return;
+
+            statusEl.textContent = 'Generating…';
+            const payload = { confirm: true, supplier, start, end, advance_amount: advance };
+
+            try {
+                const res  = await fetch('/api/supplier-payment-summary/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    statusEl.textContent = data.error || 'Failed to confirm statement';
+                    return;
+                }
+                statusEl.textContent = '✓ Statement generated successfully';
+                if (data.pdf_url) window.open(data.pdf_url, '_blank');
+                loadSupplierHistory();
+                lookupSupplierPayment();
+            } catch (err) {
+                statusEl.textContent = 'Confirmation failed';
+                console.error(err);
+            }
+        }
+
+        /* ── Clear ─────────────────────────────────────── */
+        function clearSupplierSearch() {
+            document.getElementById('supplier-name').value = '';
+            document.getElementById('supplier-start-date').value = '';
+            document.getElementById('supplier-end-date').value = '';
+            document.getElementById('supplier-include-paid').checked = false;
+            document.getElementById('supplier-status').textContent = '';
+            document.getElementById('supplier-summary').style.display = 'none';
+            _supplierTotal = 0;
+        }
+
+        /* ── History ───────────────────────────────────── */
+        async function loadSupplierHistory() {
+            const supplier = document.getElementById('supplier-name').value.trim();
+            const body = document.getElementById('supplier-history-body');
+            body.innerHTML = `<tr><td colspan="7" style="color:#888;padding:16px;">Loading…</td></tr>`;
+            try {
+                let url = '/api/supplier-payment-summary/history';
+                if (supplier) url += `?supplier=${encodeURIComponent(supplier)}`;
+                const res  = await fetch(url);
+                const data = await res.json();
+                const rows = data.data || [];
+                if (!rows.length) {
+                    body.innerHTML = `<tr><td colspan="7" style="color:#888;padding:16px;">No history saved yet.</td></tr>`;
+                    return;
+                }
+                body.innerHTML = rows.map(rec => {
+                    const cf  = Number(rec.advance_carried_forward || 0);
+                    const bal = cf > 0
+                        ? `<span style="color:#fbbf24;">CF ₹${cf.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>`
+                        : `<span style="color:#f87171;">₹${Number(rec.balance_amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>`;
+                    return `
+                        <tr>
+                            <td style="font-size:12px;">${rec.statement_number || rec.id}</td>
+                            <td>${rec.supplier_name || '—'}</td>
+                            <td>${rec.statement_date || '—'}</td>
+                            <td style="color:#D4AF37;">₹${Number(rec.total_amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                            <td style="color:#4ade80;">₹${Number(rec.advance_deducted||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                            <td>${bal}</td>
+                            <td><a href="/api/supplier-payment-summary/${rec.id}/pdf" target="_blank" style="color:#D4AF37;text-decoration:underline;">Open PDF</a></td>
+                        </tr>`;
+                }).join('');
+            } catch (err) {
+                body.innerHTML = `<tr><td colspan="7" style="color:#f87171;padding:16px;">Unable to load history.</td></tr>`;
+            }
+        }
+
+        loadSupplierHistory();
+    </script>
+</body>
+</html>
