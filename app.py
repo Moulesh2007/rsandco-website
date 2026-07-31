@@ -4331,7 +4331,7 @@ def _resolve_supplier_name(keyword, records):
         return contains[0][0], 0.95
 
     fuzzy_name = ''
-    fuzzy_score = 1.0
+    fuzzy_score = 0.0
     for name in names:
         normalized = _normalize_supplier_name(name)
         if not normalized:
