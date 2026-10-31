@@ -2835,12 +2835,19 @@ def supplier_expenses(supplier_id):
     else:
         all_expenses = MOCK_DATABASE.get("expenses", [])
 
-    supplier_name = supplier.get('company_name', '').upper()
-    filtered = [
-        e for e in all_expenses
-        if e.get('supplier_id') == supplier_id
-        or (e.get('company_name') or '').upper() == supplier_name
-    ]
+    supplier_name = supplier.get('company_name', '').strip().upper()
+    filtered = []
+    for e in all_expenses:
+        sid   = (e.get('supplier_id') or '').strip()
+        sname = (e.get('company_name') or e.get('supplier_name') or '').strip().upper()
+        if sid == supplier_id or sname == supplier_name:
+            # Normalise material_type: pull from sub_category or description if missing
+            if not e.get('material_type'):
+                e['material_type'] = e.get('sub_category') or ''
+            filtered.append(e)
+
+    # Sort by date descending
+    filtered.sort(key=lambda x: x.get('date',''), reverse=True)
     return jsonify({"success": True, "data": filtered, "supplier": supplier})
 
 # Expense Management Module

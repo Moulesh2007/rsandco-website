@@ -1204,14 +1204,16 @@
                     : (_activeSupplier.materials_supplied||'').split(',').filter(Boolean))
                 : MATERIALS_LIST;
 
-            // Only show tabs for materials that have at least one record (or All)
-            const usedMats = [...new Set(_supplierExpenses.map(r => r.material_type || r.category || '').filter(Boolean))];
-            const tabs = ['All', ...mats.filter(m => usedMats.includes(m))];
+            // Detect all materials used across all records (with fallbacks)
+            const usedMats = [...new Set(_supplierExpenses.map(r =>
+                r.material_type || r.sub_category || r.category || ''
+            ).filter(Boolean))];
+            const tabs = ['All', ...usedMats];
 
             const container = document.getElementById('mat-filter-tabs');
             container.innerHTML = tabs.map(t => {
                 const count = t === 'All' ? _supplierExpenses.length
-                    : _supplierExpenses.filter(r => (r.material_type||r.category) === t).length;
+                    : _supplierExpenses.filter(r => (r.material_type||r.sub_category||r.category) === t).length;
                 return `<button class="mat-tab${_activeMatFilter===t?' active':''}" onclick="setMatFilter('${t}')">
                     ${t} <span style="font-size:11px;opacity:.7;">(${count})</span>
                 </button>`;
@@ -1227,22 +1229,16 @@
 
         // ── Build per-material breakdown summary cards ────────────────────────
         function buildMaterialBreakdown() {
-            const mats = _activeSupplier
-                ? (Array.isArray(_activeSupplier.materials_supplied)
-                    ? _activeSupplier.materials_supplied
-                    : (_activeSupplier.materials_supplied||'').split(',').filter(Boolean))
-                : MATERIALS_LIST;
-
             const grid = document.getElementById('mat-breakdown-grid');
             if (!_supplierExpenses.length) {
-                grid.innerHTML = '<div style="color:#888;font-size:13px;grid-column:1/-1;">No expense records yet.</div>';
+                grid.innerHTML = '<div style="color:#888;font-size:13px;grid-column:1/-1;">No expense records yet. Add records using the form above.</div>';
                 return;
             }
 
-            // Group by material
+            // Group by material (use sub_category as fallback)
             const grouped = {};
             _supplierExpenses.forEach(r => {
-                const mat = r.material_type || r.category || 'Other';
+                const mat = r.material_type || r.sub_category || r.category || 'Other';
                 if (!grouped[mat]) grouped[mat] = { total: 0, balance: 0, qty: 0, count: 0 };
                 grouped[mat].total   += parseFloat(r.total_amount || r.amount || 0);
                 grouped[mat].balance += parseFloat(r.balance_amount || 0);
@@ -1264,18 +1260,23 @@
         function renderSupplierExpenses(records) {
             const tbody = document.getElementById('sup-expense-table-body');
             if (!records.length) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#888;">No expense records yet for this supplier</td></tr>';
+                const supName = _activeSupplier ? _activeSupplier.company_name : '';
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#888;padding:20px;">
+                    No expense records found for <strong style="color:#D4AF37;">${supName}</strong>.<br>
+                    <span style="font-size:12px;">Add a record above, or ensure existing records use "${supName}" as the Company Name.</span>
+                </td></tr>`;
                 updateSupExpFilteredBar([]);
                 return;
             }
             tbody.innerHTML = records.map(r => {
-                const bal = parseFloat(r.balance_amount||r.total_amount||0);
+                const mat = r.material_type || r.sub_category || r.category || '—';
+                const bal = parseFloat(r.balance_amount || 0);
                 const balColor = bal > 0 ? '#f87171' : '#4ade80';
                 return `<tr>
                     <td>${r.date||'—'}</td>
-                    <td>${r.material_type||r.category||'—'}</td>
+                    <td><span style="background:#2a2410;border:1px solid #D4AF37;border-radius:4px;padding:3px 8px;font-size:12px;color:#D4AF37;">${mat}</span></td>
                     <td>${r.quality||'—'}</td>
-                    <td>${r.quantity||'—'}</td>
+                    <td>${r.quantity ? parseFloat(r.quantity).toFixed(2)+' T' : '—'}</td>
                     <td>${r.rate_per_ton ? '₹'+parseFloat(r.rate_per_ton).toLocaleString('en-IN') : '—'}</td>
                     <td style="color:#D4AF37;font-weight:600;">${fmt(r.total_amount||r.amount)}</td>
                     <td style="color:#60a5fa;">${fmt(r.advance_amount)}</td>
@@ -1293,14 +1294,14 @@
 
         function updateSupplierDetailTotals(records) {
             const total   = records.reduce((a,r)=>a+parseFloat(r.total_amount||r.amount||0),0);
-            const balance = records.reduce((a,r)=>a+parseFloat(r.balance_amount||r.total_amount||0),0);
+            const balance = records.reduce((a,r)=>a+parseFloat(r.balance_amount||0),0);
             document.getElementById('sup-detail-spend').textContent   = fmt(total);
             document.getElementById('sup-detail-balance').textContent = fmt(balance);
         }
 
         function updateSupExpFilteredBar(records) {
             const total   = records.reduce((a,r)=>a+parseFloat(r.total_amount||r.amount||0),0);
-            const balance = records.reduce((a,r)=>a+parseFloat(r.balance_amount||r.total_amount||0),0);
+            const balance = records.reduce((a,r)=>a+parseFloat(r.balance_amount||0),0);
             document.getElementById('sup-exp-filtered-total').textContent   = fmt(total);
             document.getElementById('sup-exp-filtered-balance').textContent = fmt(balance);
             document.getElementById('sup-exp-filtered-count').textContent   = records.length;
@@ -1312,7 +1313,10 @@
             let filtered = _supplierExpenses;
             // Apply material tab filter
             if (_activeMatFilter && _activeMatFilter !== 'All') {
-                filtered = filtered.filter(r => (r.material_type || r.category) === _activeMatFilter);
+                filtered = filtered.filter(r => {
+                    const mat = r.material_type || r.sub_category || r.category || '';
+                    return mat === _activeMatFilter;
+                });
             }
             // Apply date filters
             if (start) filtered = filtered.filter(r => r.date >= start);
