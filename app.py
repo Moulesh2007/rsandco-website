@@ -2814,41 +2814,57 @@ def supplier_detail(supplier_id):
 @app.route('/api/suppliers/<supplier_id>/expenses', methods=['GET'])
 def supplier_expenses(supplier_id):
     """Return all expense records that belong to the given supplier."""
-    # Resolve supplier name for matching
     suppliers = _get_suppliers()
     supplier = next((s for s in suppliers if s.get('id') == supplier_id), None)
     if not supplier:
         return jsonify({"error": "Supplier not found"}), 404
 
-    # Fetch all expenses then filter by supplier_id OR company_name match
-    all_expenses = []
+    supplier_name = supplier.get('company_name', '').strip().upper()
+
+    # Fetch from Supabase using supplier_id OR supplier_name filter
+    supabase_exp = []
     if SUPABASE_CLIENT:
         try:
-            resp = SUPABASE_CLIENT.table("expenses").select("*").execute()
-            supabase_exp = resp.data if resp.data else []
-            local_exp = MOCK_DATABASE.get("expenses", [])
-            sb_ids = {e.get("id") for e in supabase_exp}
-            all_expenses = supabase_exp + [e for e in local_exp if e.get("id") not in sb_ids]
+            # First: match by supplier_id directly
+            r1 = SUPABASE_CLIENT.table("expenses").select("*").eq("supplier_id", supplier_id).execute()
+            by_id = r1.data or []
+            # Also collect all supplier IDs for this supplier (handle duplicates in DB)
+            all_sup_ids = [s['id'] for s in suppliers if s.get('company_name','').strip().upper() == supplier_name]
+            seen_ids = {e['id'] for e in by_id}
+            for sid in all_sup_ids:
+                if sid != supplier_id:
+                    r_extra = SUPABASE_CLIENT.table("expenses").select("*").eq("supplier_id", sid).execute()
+                    for e in (r_extra.data or []):
+                        if e['id'] not in seen_ids:
+                            by_id.append(e); seen_ids.add(e['id'])
+            # Second: match by supplier_name (for records saved before supplier_id was set)
+            r2 = SUPABASE_CLIENT.table("expenses").select("*").ilike("supplier_name", supplier_name).execute()
+            for e in (r2.data or []):
+                if e['id'] not in seen_ids:
+                    by_id.append(e); seen_ids.add(e['id'])
+            supabase_exp = by_id
         except Exception as e:
-            logger.error(f"Supabase expenses fetch error: {e}")
-            all_expenses = MOCK_DATABASE.get("expenses", [])
-    else:
-        all_expenses = MOCK_DATABASE.get("expenses", [])
+            logger.error(f"Supabase supplier expenses fetch error: {e}")
 
-    supplier_name = supplier.get('company_name', '').strip().upper()
-    filtered = []
-    for e in all_expenses:
-        sid   = (e.get('supplier_id') or '').strip()
-        sname = (e.get('company_name') or e.get('supplier_name') or '').strip().upper()
-        if sid == supplier_id or sname == supplier_name:
-            # Normalise material_type: pull from sub_category or description if missing
-            if not e.get('material_type'):
-                e['material_type'] = e.get('sub_category') or ''
-            filtered.append(e)
+    # Merge with local fallback
+    local_exp = MOCK_DATABASE.get("expenses", [])
+    sb_ids = {e.get("id") for e in supabase_exp}
+    local_matched = [
+        e for e in local_exp if e.get("id") not in sb_ids and (
+            (e.get('supplier_id') or '') == supplier_id or
+            (e.get('supplier_name') or '').strip().upper() == supplier_name or
+            (e.get('company_name') or '').strip().upper() == supplier_name
+        )
+    ]
+    all_filtered = supabase_exp + local_matched
 
-    # Sort by date descending
-    filtered.sort(key=lambda x: x.get('date',''), reverse=True)
-    return jsonify({"success": True, "data": filtered, "supplier": supplier})
+    # Normalise material_type fallback
+    for e in all_filtered:
+        if not e.get('material_type'):
+            e['material_type'] = e.get('sub_category') or e.get('description') or ''
+
+    all_filtered.sort(key=lambda x: x.get('date', ''), reverse=True)
+    return jsonify({"success": True, "data": all_filtered, "supplier": supplier})
 
 # Expense Management Module
 @app.route('/api/expenses', methods=['GET', 'POST'])
@@ -2909,16 +2925,16 @@ def expenses():
 
         if SUPABASE_CLIENT:
             try:
-                # Build a Supabase-safe record that only contains columns
-                # present in the DB schema (quality is stored locally only
-                # because the DB column may not exist yet on older installs).
+                # Build a Supabase-safe record using only columns that exist in the schema.
+                # NOTE: expenses table does NOT have company_name - use supplier_name instead.
                 supabase_record = {
                     "id":               expense_record["id"],
                     "category":         expense_record["category"],
                     "date":             expense_record["date"],
                     "description":      expense_record["description"],
-                    "company_name":     expense_record["company_name"],
                     "gst_no":           expense_record["gst_no"],
+                    "supplier_id":      expense_record["supplier_id"],
+                    "supplier_name":    expense_record["supplier_name"] or expense_record["company_name"],
                     "material_type":    expense_record["material_type"],
                     "quantity":         expense_record["quantity"],
                     "rate_per_ton":     expense_record["rate_per_ton"],
@@ -2927,13 +2943,13 @@ def expenses():
                     "advance_amount":   expense_record["advance_amount"],
                     "balance_amount":   expense_record["balance_amount"],
                     "supplier_payment_status": expense_record["supplier_payment_status"],
-                    "supplier_statement_id":   expense_record["supplier_statement_id"],
                     "created_at":       expense_record["created_at"],
                     "created_by":       expense_record["created_by"],
                 }
-                # Include quality only if the column exists in Supabase
                 if data.get('quality'):
                     supabase_record["quality"] = expense_record["quality"]
+                if expense_record.get("supplier_statement_id"):
+                    supabase_record["supplier_statement_id"] = expense_record["supplier_statement_id"]
                 response = SUPABASE_CLIENT.table("expenses").insert(supabase_record).execute()
                 # An insert must return the row we just wrote.
                 if not response.data:
