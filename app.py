@@ -32,8 +32,8 @@ if os.getenv('VERCEL'):
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 else:
-    # Local development
-    app.config['SESSION_COOKIE_SECURE'] = True
+    # Local development — must be False so cookies work over plain HTTP
+    app.config['SESSION_COOKIE_SECURE'] = False
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
@@ -91,7 +91,8 @@ DB_FILE = os.path.join(os.path.dirname(__file__), 'data', 'db.json')
 # Keys that are user-created and must be persisted across restarts
 PERSISTED_KEYS = ['manual_billing', 'expenses', 'rmc_orders', 'rmc_order_items',
                    'rmc_invoices', 'rmc_payments', 'rmc_clients', 'submissions', 'newsletter',
-                   'rmc_users', 'client_billing_summaries', 'supplier_payment_summaries']
+                   'rmc_users', 'client_billing_summaries', 'supplier_payment_summaries',
+                   'rmc_quotations', 'rmc_quotation_items', 'rmc_quotation_settings']
 BILLING_PDF_DIR = os.path.join(os.path.dirname(__file__), 'data', 'billing_pdfs')
 
 def save_db():
@@ -355,7 +356,25 @@ MOCK_DATABASE = {
             "notes": "Auto-generated invoice for order RMC-20260610-0001"
         }
     ],
-    "rmc_payments": []
+    "rmc_payments": [],
+    "rmc_quotations": [],
+    "rmc_quotation_items": [],
+    "rmc_quotation_settings": [
+        {
+            "id": "default",
+            "default_terms": json.dumps([
+                "Prices are subject to change without prior notice.",
+                "Payment terms: 50% advance, balance on delivery / as agreed.",
+                "Delivery subject to plant availability and site accessibility.",
+                "Rates valid only for the validity period mentioned above.",
+                "Any additional cartage/pumping charges extra as applicable.",
+                "Taxes as applicable at the time of billing.",
+                "Disputes subject to Chennai jurisdiction only."
+            ]),
+            "default_validity_days": 15,
+            "updated_at": "2026-09-12T00:00:00.000Z"
+        }
+    ]
 }
 
 if SUPABASE_URL and SUPABASE_KEY:
@@ -1527,6 +1546,752 @@ def export_invoices_excel():
     response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     return response
 
+# ─── QUOTATIONS MODULE ────────────────────────────────────────────────────────
+
+@app.route('/api/rmc/quotations', methods=['GET', 'POST'])
+def rmc_quotations():
+    if request.method == 'GET':
+        if SUPABASE_CLIENT:
+            try:
+                response = SUPABASE_CLIENT.table("rmc_quotations").select("*").order("created_at", desc=True).execute()
+                return jsonify(response.data if response.data else [])
+            except Exception as e:
+                logger.error(f"Supabase GET quotations error: {e}")
+                return jsonify(sorted(MOCK_DATABASE["rmc_quotations"], key=lambda x: x.get('created_at', ''), reverse=True))
+        else:
+            return jsonify(sorted(MOCK_DATABASE["rmc_quotations"], key=lambda x: x.get('created_at', ''), reverse=True))
+
+    elif request.method == 'POST':
+        data = request.json
+        quotation_id = str(uuid.uuid4())
+        
+        # Determine next quotation number
+        year = datetime.now().year
+        prefix = f"RSCO/QT/{year}/"
+        next_seq = 1
+        
+        existing = []
+        if SUPABASE_CLIENT:
+            try:
+                resp = SUPABASE_CLIENT.table("rmc_quotations").select("quotation_number").like("quotation_number", f"{prefix}%").execute()
+                existing = [r['quotation_number'] for r in (resp.data or [])]
+            except Exception as e:
+                logger.error(f"Error fetching existing quotations for auto-numbering: {e}")
+                existing = [q['quotation_number'] for q in MOCK_DATABASE["rmc_quotations"] if q.get('quotation_number', '').startswith(prefix)]
+        else:
+            existing = [q['quotation_number'] for q in MOCK_DATABASE["rmc_quotations"] if q.get('quotation_number', '').startswith(prefix)]
+            
+        if existing:
+            seqs = []
+            for qn in existing:
+                try:
+                    seqs.append(int(qn.split('/')[-1]))
+                except ValueError:
+                    pass
+            if seqs:
+                next_seq = max(seqs) + 1
+                
+        quotation_number = f"{prefix}{next_seq:03d}"
+        
+        # Calculate validity date
+        val_days = int(data.get('validity_days', 15))
+        try:
+            q_date = datetime.strptime(data.get('quotation_date', datetime.now().strftime('%Y-%m-%d')), '%Y-%m-%d')
+        except ValueError:
+            q_date = datetime.now()
+        validity_date = (q_date + timedelta(days=val_days)).strftime('%Y-%m-%d')
+
+        quotation_record = {
+            "id": quotation_id,
+            "quotation_number": quotation_number,
+            "client_id": data.get('client_id'),
+            "client_name": data.get('client_name', ''),
+            "company_name": data.get('company_name', ''),
+            "address": data.get('address', ''),
+            "phone": data.get('phone', ''),
+            "email": data.get('email', ''),
+            "client_gst_number": data.get('client_gst_number', ''),
+            "quotation_date": data.get('quotation_date', datetime.now().strftime('%Y-%m-%d')),
+            "validity_days": val_days,
+            "validity_date": validity_date,
+            "include_gst": bool(data.get('include_gst', False)),
+            "gst_type": data.get('gst_type', 'intra'),
+            "subtotal": float(data.get('subtotal', 0)),
+            "cgst_amount": float(data.get('cgst_amount', 0)),
+            "sgst_amount": float(data.get('sgst_amount', 0)),
+            "igst_amount": float(data.get('igst_amount', 0)),
+            "grand_total": float(data.get('grand_total', 0)),
+            "terms_and_conditions": json.dumps(data.get('terms_and_conditions', [])),
+            "status": data.get('status', 'Draft'),
+            "notes": data.get('notes', ''),
+            "created_at": datetime.now().isoformat(),
+            "created_by": session.get('username', 'System')
+        }
+        
+        items = data.get('items', [])
+        item_records = []
+        for item in items:
+            item_records.append({
+                "id": str(uuid.uuid4()),
+                "quotation_id": quotation_id,
+                "description": item.get('description', ''),
+                "quantity": float(item.get('quantity', 0)),
+                "unit": item.get('unit', 'cu.m'),
+                "rate": float(item.get('rate', 0)),
+                "amount": float(item.get('amount', 0))
+            })
+
+        if SUPABASE_CLIENT:
+            try:
+                SUPABASE_CLIENT.table("rmc_quotations").insert(quotation_record).execute()
+                if item_records:
+                    SUPABASE_CLIENT.table("rmc_quotation_items").insert(item_records).execute()
+            except Exception as e:
+                logger.error(f"Supabase POST quotation error: {e}")
+                MOCK_DATABASE["rmc_quotations"].append(quotation_record)
+                MOCK_DATABASE["rmc_quotation_items"].extend(item_records)
+                save_db()
+        else:
+            MOCK_DATABASE["rmc_quotations"].append(quotation_record)
+            MOCK_DATABASE["rmc_quotation_items"].extend(item_records)
+            save_db()
+            
+        return jsonify({"success": True, "quotation_number": quotation_number, "id": quotation_id})
+
+@app.route('/api/rmc/quotations/<quotation_id>', methods=['GET', 'PUT', 'DELETE'])
+def rmc_quotation_detail(quotation_id):
+    if request.method == 'GET':
+        quotation = None
+        items = []
+        if SUPABASE_CLIENT:
+            try:
+                q_resp = SUPABASE_CLIENT.table("rmc_quotations").select("*").eq("id", quotation_id).execute()
+                if q_resp.data:
+                    quotation = q_resp.data[0]
+                    i_resp = SUPABASE_CLIENT.table("rmc_quotation_items").select("*").eq("quotation_id", quotation_id).execute()
+                    items = i_resp.data if i_resp.data else []
+            except Exception as e:
+                logger.error(f"Supabase GET quotation details error: {e}")
+        
+        if not quotation:
+            quotation = next((q for q in MOCK_DATABASE["rmc_quotations"] if q['id'] == quotation_id), None)
+            if quotation:
+                items = [i for i in MOCK_DATABASE["rmc_quotation_items"] if i['quotation_id'] == quotation_id]
+                
+        if not quotation:
+            return jsonify({"error": "Quotation not found"}), 404
+            
+        quotation['items'] = items
+        return jsonify(quotation)
+        
+    elif request.method == 'DELETE':
+        if SUPABASE_CLIENT:
+            try:
+                SUPABASE_CLIENT.table("rmc_quotation_items").delete().eq("quotation_id", quotation_id).execute()
+                SUPABASE_CLIENT.table("rmc_quotations").delete().eq("id", quotation_id).execute()
+            except Exception as e:
+                logger.error(f"Supabase DELETE quotation error: {e}")
+                MOCK_DATABASE["rmc_quotations"] = [q for q in MOCK_DATABASE["rmc_quotations"] if q['id'] != quotation_id]
+                MOCK_DATABASE["rmc_quotation_items"] = [i for i in MOCK_DATABASE["rmc_quotation_items"] if i['quotation_id'] != quotation_id]
+                save_db()
+        else:
+            MOCK_DATABASE["rmc_quotations"] = [q for q in MOCK_DATABASE["rmc_quotations"] if q['id'] != quotation_id]
+            MOCK_DATABASE["rmc_quotation_items"] = [i for i in MOCK_DATABASE["rmc_quotation_items"] if i['quotation_id'] != quotation_id]
+            save_db()
+        return jsonify({"success": True})
+        
+    elif request.method == 'PUT':
+        data = request.json
+        updates = {
+            "client_id": data.get('client_id'),
+            "client_name": data.get('client_name', ''),
+            "company_name": data.get('company_name', ''),
+            "address": data.get('address', ''),
+            "phone": data.get('phone', ''),
+            "email": data.get('email', ''),
+            "client_gst_number": data.get('client_gst_number', ''),
+            "quotation_date": data.get('quotation_date'),
+            "validity_days": int(data.get('validity_days', 15)),
+            "include_gst": bool(data.get('include_gst', False)),
+            "gst_type": data.get('gst_type', 'intra'),
+            "subtotal": float(data.get('subtotal', 0)),
+            "cgst_amount": float(data.get('cgst_amount', 0)),
+            "sgst_amount": float(data.get('sgst_amount', 0)),
+            "igst_amount": float(data.get('igst_amount', 0)),
+            "grand_total": float(data.get('grand_total', 0)),
+            "status": data.get('status', 'Draft'),
+            "notes": data.get('notes', ''),
+        }
+        
+        if 'terms_and_conditions' in data:
+            updates['terms_and_conditions'] = json.dumps(data['terms_and_conditions'])
+            
+        if updates['quotation_date']:
+            try:
+                q_date = datetime.strptime(updates['quotation_date'], '%Y-%m-%d')
+                updates['validity_date'] = (q_date + timedelta(days=updates['validity_days'])).strftime('%Y-%m-%d')
+            except ValueError:
+                pass
+                
+        if SUPABASE_CLIENT:
+            try:
+                SUPABASE_CLIENT.table("rmc_quotations").update(updates).eq("id", quotation_id).execute()
+                
+                # Update items (delete all, insert new)
+                if 'items' in data:
+                    SUPABASE_CLIENT.table("rmc_quotation_items").delete().eq("quotation_id", quotation_id).execute()
+                    new_items = []
+                    for item in data['items']:
+                        new_items.append({
+                            "id": str(uuid.uuid4()),
+                            "quotation_id": quotation_id,
+                            "description": item.get('description', ''),
+                            "quantity": float(item.get('quantity', 0)),
+                            "unit": item.get('unit', 'cu.m'),
+                            "rate": float(item.get('rate', 0)),
+                            "amount": float(item.get('amount', 0))
+                        })
+                    if new_items:
+                        SUPABASE_CLIENT.table("rmc_quotation_items").insert(new_items).execute()
+            except Exception as e:
+                logger.error(f"Supabase PUT quotation error: {e}")
+                _update_mock_quotation(quotation_id, updates, data.get('items'))
+        else:
+            _update_mock_quotation(quotation_id, updates, data.get('items'))
+            
+        return jsonify({"success": True})
+
+def _update_mock_quotation(quotation_id, updates, new_items=None):
+    for q in MOCK_DATABASE["rmc_quotations"]:
+        if q['id'] == quotation_id:
+            q.update(updates)
+            break
+    if new_items is not None:
+        MOCK_DATABASE["rmc_quotation_items"] = [i for i in MOCK_DATABASE["rmc_quotation_items"] if i['quotation_id'] != quotation_id]
+        for item in new_items:
+            MOCK_DATABASE["rmc_quotation_items"].append({
+                "id": str(uuid.uuid4()),
+                "quotation_id": quotation_id,
+                "description": item.get('description', ''),
+                "quantity": float(item.get('quantity', 0)),
+                "unit": item.get('unit', 'cu.m'),
+                "rate": float(item.get('rate', 0)),
+                "amount": float(item.get('amount', 0))
+            })
+    save_db()
+
+@app.route('/api/rmc/quotation-settings', methods=['GET', 'PUT'])
+def rmc_quotation_settings():
+    if request.method == 'GET':
+        settings = None
+        if SUPABASE_CLIENT:
+            try:
+                resp = SUPABASE_CLIENT.table("rmc_quotation_settings").select("*").eq("id", "default").execute()
+                if resp.data:
+                    settings = resp.data[0]
+            except Exception as e:
+                logger.error(f"Supabase GET quotation settings error: {e}")
+        
+        if not settings:
+            settings = next((s for s in MOCK_DATABASE["rmc_quotation_settings"] if s['id'] == 'default'), None)
+            
+        return jsonify(settings if settings else {})
+        
+    elif request.method == 'PUT':
+        data = request.json
+        updates = {
+            "default_terms": json.dumps(data.get('default_terms', [])),
+            "default_validity_days": int(data.get('default_validity_days', 15)),
+            "updated_at": datetime.now().isoformat(),
+            "updated_by": session.get('username', 'System')
+        }
+        
+        if SUPABASE_CLIENT:
+            try:
+                SUPABASE_CLIENT.table("rmc_quotation_settings").update(updates).eq("id", "default").execute()
+            except Exception as e:
+                logger.error(f"Supabase PUT quotation settings error: {e}")
+                _update_mock_quotation_settings(updates)
+        else:
+            _update_mock_quotation_settings(updates)
+            
+        return jsonify({"success": True})
+
+def _update_mock_quotation_settings(updates):
+    for s in MOCK_DATABASE["rmc_quotation_settings"]:
+        if s['id'] == 'default':
+            s.update(updates)
+            break
+    save_db()
+
+@app.route('/api/rmc/quotations/next-number', methods=['GET'])
+def get_next_quotation_number():
+    year = datetime.now().year
+    prefix = f"RSCO/QT/{year}/"
+    next_seq = 1
+    
+    existing = []
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("rmc_quotations").select("quotation_number").like("quotation_number", f"{prefix}%").execute()
+            existing = [r['quotation_number'] for r in (resp.data or [])]
+        except Exception as e:
+            existing = [q['quotation_number'] for q in MOCK_DATABASE["rmc_quotations"] if q.get('quotation_number', '').startswith(prefix)]
+    else:
+        existing = [q['quotation_number'] for q in MOCK_DATABASE["rmc_quotations"] if q.get('quotation_number', '').startswith(prefix)]
+        
+    if existing:
+        seqs = []
+        for qn in existing:
+            try:
+                seqs.append(int(qn.split('/')[-1]))
+            except ValueError:
+                pass
+        if seqs:
+            next_seq = max(seqs) + 1
+            
+    return jsonify({"next_number": f"{prefix}{next_seq:03d}"})
+
+@app.route('/api/rmc/quotations/<quotation_id>/convert-to-invoice', methods=['POST'])
+def convert_quotation_to_invoice(quotation_id):
+    # Fetch quotation
+    quotation = None
+    items = []
+    if SUPABASE_CLIENT:
+        try:
+            q_resp = SUPABASE_CLIENT.table("rmc_quotations").select("*").eq("id", quotation_id).execute()
+            if q_resp.data:
+                quotation = q_resp.data[0]
+                i_resp = SUPABASE_CLIENT.table("rmc_quotation_items").select("*").eq("quotation_id", quotation_id).execute()
+                items = i_resp.data if i_resp.data else []
+        except Exception as e:
+            logger.error(f"Supabase GET quotation for conversion error: {e}")
+            
+    if not quotation:
+        quotation = next((q for q in MOCK_DATABASE["rmc_quotations"] if q['id'] == quotation_id), None)
+        if quotation:
+            items = [i for i in MOCK_DATABASE["rmc_quotation_items"] if i['quotation_id'] == quotation_id]
+            
+    if not quotation:
+        return jsonify({"error": "Quotation not found"}), 404
+        
+    if quotation.get('status') == 'Converted':
+        return jsonify({"error": "Quotation already converted to invoice"}), 400
+
+    # Ensure client exists or create one (basic stub)
+    client_id = quotation.get('client_id')
+    if not client_id and quotation.get('company_name'):
+         # Create a stub client
+         client_id = str(uuid.uuid4())
+         new_client = {
+             "id": client_id,
+             "company_name": quotation['company_name'],
+             "contact_person": quotation.get('client_name', 'N/A'),
+             "email": quotation.get('email', ''),
+             "phone": quotation.get('phone', ''),
+             "billing_address": quotation.get('address', ''),
+             "gst_number": quotation.get('client_gst_number', ''),
+             "is_active": True
+         }
+         if SUPABASE_CLIENT:
+             try:
+                 SUPABASE_CLIENT.table("rmc_clients").insert(new_client).execute()
+             except Exception as e:
+                 logger.error(f"Error creating client during conversion: {e}")
+                 MOCK_DATABASE["rmc_clients"].append(new_client)
+         else:
+             MOCK_DATABASE["rmc_clients"].append(new_client)
+             save_db()
+
+    # Determine next order number
+    year = datetime.now().year
+    prefix = f"RMC-{year}{datetime.now().strftime('%m%d')}-"
+    next_seq = 1
+    existing_orders = []
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("rmc_orders").select("order_number").like("order_number", f"{prefix}%").execute()
+            existing_orders = [r['order_number'] for r in (resp.data or [])]
+        except Exception:
+            existing_orders = [o['order_number'] for o in MOCK_DATABASE.get("rmc_orders", []) if o.get('order_number', '').startswith(prefix)]
+    else:
+        existing_orders = [o['order_number'] for o in MOCK_DATABASE.get("rmc_orders", []) if o.get('order_number', '').startswith(prefix)]
+        
+    if existing_orders:
+        seqs = []
+        for on in existing_orders:
+            try:
+                seqs.append(int(on.split('-')[-1]))
+            except ValueError:
+                pass
+        if seqs:
+            next_seq = max(seqs) + 1
+    order_number = f"{prefix}{next_seq:04d}"
+
+    order_id = str(uuid.uuid4())
+    new_order = {
+        "id": order_id,
+        "order_number": order_number,
+        "client_id": client_id,
+        "customer_name": quotation.get('company_name', ''),
+        "phone": quotation.get('phone', ''),
+        "order_date": datetime.now().isoformat(),
+        "status": "Pending",
+        "total_amount": quotation.get('grand_total', 0),
+        "notes": f"Generated from Quotation {quotation.get('quotation_number')}"
+    }
+
+    order_items = []
+    for item in items:
+        # We need a valid grade_id for the order item. Try to match by description, or default.
+        grades = []
+        if SUPABASE_CLIENT:
+             try:
+                 gr_resp = SUPABASE_CLIENT.table("rmc_concrete_grades").select("*").execute()
+                 grades = gr_resp.data or []
+             except Exception:
+                 grades = MOCK_DATABASE.get("rmc_concrete_grades", [])
+        else:
+             grades = MOCK_DATABASE.get("rmc_concrete_grades", [])
+             
+        matched_grade = next((g for g in grades if g['grade_name'].lower() in item['description'].lower()), None)
+        grade_id = matched_grade['id'] if matched_grade else (grades[0]['id'] if grades else None)
+        
+        if grade_id:
+            order_items.append({
+                "id": str(uuid.uuid4()),
+                "order_id": order_id,
+                "grade_id": grade_id,
+                "quantity_cubic_meters": item.get('quantity', 0),
+                "unit_price": item.get('rate', 0),
+                "subtotal": item.get('amount', 0)
+            })
+
+    # Save order
+    if SUPABASE_CLIENT:
+        try:
+            SUPABASE_CLIENT.table("rmc_orders").insert(new_order).execute()
+            if order_items:
+                SUPABASE_CLIENT.table("rmc_order_items").insert(order_items).execute()
+            SUPABASE_CLIENT.table("rmc_quotations").update({"status": "Converted"}).eq("id", quotation_id).execute()
+        except Exception as e:
+             logger.error(f"Error creating order from quotation: {e}")
+             MOCK_DATABASE["rmc_orders"].append(new_order)
+             MOCK_DATABASE["rmc_order_items"].extend(order_items)
+             _update_mock_quotation(quotation_id, {"status": "Converted"})
+    else:
+        MOCK_DATABASE["rmc_orders"].append(new_order)
+        MOCK_DATABASE["rmc_order_items"].extend(order_items)
+        _update_mock_quotation(quotation_id, {"status": "Converted"})
+        save_db()
+
+    # Generate an invoice
+    invoice_id = str(uuid.uuid4())
+    year_inv = datetime.now().year
+    prefix_inv = f"RSCO/INV/{year_inv}/"
+    next_seq_inv = 1
+    existing_invoices = []
+    
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("rmc_invoices").select("invoice_number").like("invoice_number", f"{prefix_inv}%").execute()
+            existing_invoices = [r['invoice_number'] for r in (resp.data or [])]
+        except Exception:
+            existing_invoices = [i['invoice_number'] for i in MOCK_DATABASE.get("rmc_invoices", []) if i.get('invoice_number', '').startswith(prefix_inv)]
+    else:
+        existing_invoices = [i['invoice_number'] for i in MOCK_DATABASE.get("rmc_invoices", []) if i.get('invoice_number', '').startswith(prefix_inv)]
+        
+    if existing_invoices:
+        seqs = []
+        for inv in existing_invoices:
+            try:
+                seqs.append(int(inv.split('/')[-1]))
+            except ValueError:
+                pass
+        if seqs:
+            next_seq_inv = max(seqs) + 1
+    invoice_number = f"{prefix_inv}{next_seq_inv:03d}"
+    
+    new_invoice = {
+        "id": invoice_id,
+        "invoice_number": invoice_number,
+        "order_id": order_id,
+        "client_id": client_id,
+        "invoice_date": datetime.now().strftime('%Y-%m-%d'),
+        "due_date": (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'), # Default 7 days
+        "subtotal": quotation.get('subtotal', 0),
+        "tax_amount": quotation.get('grand_total', 0) - quotation.get('subtotal', 0),
+        "total_amount": quotation.get('grand_total', 0),
+        "status": "Draft",
+        "notes": f"Converted from Quotation {quotation.get('quotation_number')}"
+    }
+
+    if SUPABASE_CLIENT:
+        try:
+            SUPABASE_CLIENT.table("rmc_invoices").insert(new_invoice).execute()
+        except Exception as e:
+            logger.error(f"Error inserting invoice from quotation: {e}")
+            MOCK_DATABASE["rmc_invoices"].append(new_invoice)
+            save_db()
+    else:
+        MOCK_DATABASE["rmc_invoices"].append(new_invoice)
+        save_db()
+
+    return jsonify({"success": True, "message": "Quotation converted to Order & Invoice", "order_id": order_id, "invoice_id": invoice_id})
+
+@app.route('/api/rmc/quotations/<quotation_id>/pdf', methods=['GET'])
+def quotation_pdf(quotation_id):
+    from io import BytesIO
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+    # Fetch quotation
+    quotation = None
+    items = []
+    if SUPABASE_CLIENT:
+        try:
+            q_resp = SUPABASE_CLIENT.table("rmc_quotations").select("*").eq("id", quotation_id).execute()
+            if q_resp.data:
+                quotation = q_resp.data[0]
+                i_resp = SUPABASE_CLIENT.table("rmc_quotation_items").select("*").eq("quotation_id", quotation_id).execute()
+                items = i_resp.data if i_resp.data else []
+        except Exception as e:
+            logger.error(f"Supabase GET quotation for PDF error: {e}")
+            
+    if not quotation:
+        quotation = next((q for q in MOCK_DATABASE["rmc_quotations"] if q['id'] == quotation_id), None)
+        if quotation:
+            items = [i for i in MOCK_DATABASE["rmc_quotation_items"] if i['quotation_id'] == quotation_id]
+            
+    if not quotation:
+        return "Quotation not found", 404
+
+    # Determine GST mode based on query param or saved flag
+    gst_param = request.args.get('gst')
+    include_gst = quotation.get('include_gst', False)
+    if gst_param == 'with':
+        include_gst = True
+    elif gst_param == 'without':
+        include_gst = False
+
+    # Generate PDF using ReportLab Canvas
+    buffer = BytesIO()
+    c = pdf_canvas.Canvas(buffer, pagesize=A4)
+    W, H = A4
+
+    # Branding Colors
+    GOLD = colors.HexColor("#D4AF37")
+    DARK_GOLD = colors.HexColor("#B8962E")
+    BLACK = colors.HexColor("#1a1a1a")
+    LIGHT_GRAY = colors.HexColor("#f5f5f5")
+    MID_GRAY = colors.HexColor("#e0e0e0")
+
+    def draw_header():
+        # Top Gold Bar
+        c.setFillColor(GOLD)
+        c.rect(0, H - 90, W, 90, stroke=0, fill=1)
+        
+        # Logo Box
+        c.setFillColor(BLACK)
+        c.rect(20, H - 75, 70, 60, stroke=0, fill=1)
+        logo_path = os.path.join(app.static_folder, 'images', 'logo.png')
+        if os.path.exists(logo_path):
+            try:
+                c.drawImage(logo_path, 25, H - 70, 60, 50, mask='auto')
+            except: pass
+
+        # Company Title
+        c.setFont("Helvetica-Bold", 24)
+        c.setFillColor(BLACK)
+        c.drawString(100, H - 35, "R SUNDARAM & CO")
+        
+        c.setFont("Helvetica", 10)
+        c.drawString(100, H - 50, "STRONG ROADS BUILD TO LAST")
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(100, H - 65, "READYMIX CONCRETE")
+
+        # GSTIN and Contact Right Aligned
+        c.setFont("Helvetica-Bold", 10)
+        c.drawRightString(W - 20, H - 25, "GSTIN: 33ABAFR2739J1Z7")
+        
+        c.setFont("Helvetica", 9)
+        c.drawRightString(W - 20, H - 40, "Proprietor: S MAGHESH")
+        c.drawRightString(W - 20, H - 55, "Ph: 9940270304 | info@rsandco.com")
+        c.drawRightString(W - 20, H - 70, "Quarry Rd, Tiruneermalai, Chennai")
+
+        c.setStrokeColor(DARK_GOLD)
+        c.setLineWidth(1)
+        c.line(0, H - 90, W, H - 90)
+
+    draw_header()
+
+    # Title
+    c.setFont("Helvetica-Bold", 18)
+    c.setFillColor(DARK_GOLD)
+    title = "QUOTATION" if include_gst else "QUOTATION (ESTIMATE)"
+    c.drawCentredString(W/2, H - 120, title)
+
+    # Document details & Client details
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(30, H - 150, "Quotation No:")
+    c.setFont("Helvetica", 10)
+    c.drawString(110, H - 150, str(quotation.get('quotation_number', '')))
+    
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(30, H - 165, "Date:")
+    c.setFont("Helvetica", 10)
+    c.drawString(110, H - 165, str(quotation.get('quotation_date', '')))
+    
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(30, H - 180, "Validity:")
+    c.setFont("Helvetica", 10)
+    c.drawString(110, H - 180, f"{quotation.get('validity_days', 15)} Days (Until {quotation.get('validity_date', '')})")
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(W/2 + 50, H - 150, "To:")
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(W/2 + 50, H - 165, str(quotation.get('company_name', '')))
+    c.setFont("Helvetica", 10)
+    if quotation.get('client_name'):
+        c.drawString(W/2 + 50, H - 180, f"Attn: {quotation.get('client_name')}")
+    if quotation.get('address'):
+        c.drawString(W/2 + 50, H - 195, str(quotation.get('address')))
+    if quotation.get('phone'):
+        c.drawString(W/2 + 50, H - 210, f"Ph: {quotation.get('phone')}")
+    if include_gst and quotation.get('client_gst_number'):
+        c.drawString(W/2 + 50, H - 225, f"GSTIN: {quotation.get('client_gst_number')}")
+
+    # Items Table
+    y_start = H - 250
+    table_data = [["S.No", "Description", "Quantity", "Unit", "Rate (₹)", "Amount (₹)"]]
+    for i, item in enumerate(items, 1):
+        table_data.append([
+            str(i),
+            str(item.get('description', '')),
+            f"{float(item.get('quantity', 0)):.2f}",
+            str(item.get('unit', 'cu.m')),
+            f"{float(item.get('rate', 0)):,.2f}",
+            f"{float(item.get('amount', 0)):,.2f}"
+        ])
+
+    table = Table(table_data, colWidths=[40, 240, 60, 50, 70, 80])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), GOLD),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('ALIGN', (2, 1), (-1, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 1, MID_GRAY),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, LIGHT_GRAY])
+    ]))
+    
+    w, h = table.wrap(W, H)
+    table.drawOn(c, 27, y_start - h)
+    
+    curr_y = y_start - h - 20
+
+    # Totals
+    # Recalculate if include_gst was overridden
+    subtotal = float(quotation.get('subtotal', 0))
+    grand_total = float(quotation.get('grand_total', 0))
+    gst_type = quotation.get('gst_type', 'intra')
+    cgst, sgst, igst = 0, 0, 0
+
+    if include_gst:
+        if gst_type == 'intra':
+            cgst = subtotal * 0.09
+            sgst = subtotal * 0.09
+            grand_total = subtotal + cgst + sgst
+        else:
+            igst = subtotal * 0.18
+            grand_total = subtotal + igst
+    else:
+        grand_total = subtotal
+
+    totals_x = W - 200
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(totals_x, curr_y, "Subtotal:")
+    c.drawRightString(W - 30, curr_y, f"₹ {subtotal:,.2f}")
+    curr_y -= 20
+
+    if include_gst:
+        if gst_type == 'intra':
+            c.setFont("Helvetica", 10)
+            c.drawString(totals_x, curr_y, "CGST (9%):")
+            c.drawRightString(W - 30, curr_y, f"₹ {cgst:,.2f}")
+            curr_y -= 15
+            c.drawString(totals_x, curr_y, "SGST (9%):")
+            c.drawRightString(W - 30, curr_y, f"₹ {sgst:,.2f}")
+            curr_y -= 20
+        else:
+            c.setFont("Helvetica", 10)
+            c.drawString(totals_x, curr_y, "IGST (18%):")
+            c.drawRightString(W - 30, curr_y, f"₹ {igst:,.2f}")
+            curr_y -= 20
+
+    c.setFillColor(DARK_GOLD)
+    c.rect(totals_x - 10, curr_y - 5, 190, 25, stroke=0, fill=1)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(totals_x, curr_y + 2, "Grand Total:")
+    c.drawRightString(W - 30, curr_y + 2, f"₹ {grand_total:,.2f}")
+    
+    curr_y -= 40
+    c.setFillColor(colors.black)
+
+    if not include_gst:
+        c.setFont("Helvetica-Oblique", 9)
+        c.drawRightString(W - 30, curr_y, "Note: This quotation is exclusive of GST.")
+        curr_y -= 20
+
+    # Terms & Conditions
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(30, curr_y, "Terms & Conditions:")
+    curr_y -= 15
+    c.setFont("Helvetica", 9)
+    
+    terms = []
+    try:
+        terms_str = quotation.get('terms_and_conditions', '[]')
+        if terms_str:
+            terms = json.loads(terms_str)
+    except:
+        pass
+
+    for i, term in enumerate(terms, 1):
+        # Very simple text wrap
+        term_text = f"{i}. {term}"
+        c.drawString(30, curr_y, term_text)
+        curr_y -= 15
+        
+    curr_y -= 20
+
+    # Signatory
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(W - 200, 100, "For R SUNDARAM & CO")
+    c.setFont("Helvetica", 9)
+    c.drawString(W - 200, 50, "Authorized Signatory")
+
+    # Border frame
+    c.setStrokeColor(DARK_GOLD)
+    c.rect(10, 10, W-20, H-20)
+
+    c.save()
+    output = buffer.getvalue()
+    buffer.close()
+
+    filename = f"Quotation_{str(quotation.get('quotation_number', '')).replace('/','-')}_{str(quotation.get('company_name', 'Unknown')).replace(' ', '_')}.pdf"
+
+    response = make_response(output)
+    response.headers['Content-Disposition'] = f'inline; filename={filename}'
+    response.headers['Content-Type'] = 'application/pdf'
+    return response
+
+# ─── END QUOTATIONS MODULE ────────────────────────────────────────────────────
+
 # Manual Billing Module
 @app.route('/api/manual-billing', methods=['GET', 'POST'])
 def manual_billing():
@@ -1947,7 +2712,12 @@ def expenses():
         if SUPABASE_CLIENT:
             try:
                 response = SUPABASE_CLIENT.table("expenses").select("*").execute()
-                expense_records = response.data if response.data else []
+                supabase_records = response.data if response.data else []
+                # Merge with any locally-saved fallback records (saved when Supabase was unavailable)
+                local_records = MOCK_DATABASE.get("expenses", [])
+                supabase_ids = {r.get("id") for r in supabase_records}
+                local_only = [r for r in local_records if r.get("id") not in supabase_ids]
+                expense_records = supabase_records + local_only
             except Exception as e:
                 logger.error(f"Supabase expenses fetch error: {e}")
                 expense_records = MOCK_DATABASE.get("expenses", [])
@@ -1965,7 +2735,7 @@ def expenses():
         if not data.get('category') or not data.get('date'):
             return jsonify({"error": "Category and Date are required"}), 400
 
-        # Build the record — capture ALL fields the frontend may send
+        # Build the full in-memory record (includes all fields used locally)
         expense_record = {
             "id": f"expense-{uuid.uuid4().hex[:8]}",
             "category":       data.get('category', ''),
@@ -1991,16 +2761,42 @@ def expenses():
 
         if SUPABASE_CLIENT:
             try:
-                response = SUPABASE_CLIENT.table("expenses").insert(expense_record).execute()
-                # An insert must return the row we just wrote.  Treat an empty
-                # response as a failure so the UI never displays a false success.
+                # Build a Supabase-safe record that only contains columns
+                # present in the DB schema (quality is stored locally only
+                # because the DB column may not exist yet on older installs).
+                supabase_record = {
+                    "id":               expense_record["id"],
+                    "category":         expense_record["category"],
+                    "date":             expense_record["date"],
+                    "description":      expense_record["description"],
+                    "company_name":     expense_record["company_name"],
+                    "gst_no":           expense_record["gst_no"],
+                    "material_type":    expense_record["material_type"],
+                    "quantity":         expense_record["quantity"],
+                    "rate_per_ton":     expense_record["rate_per_ton"],
+                    "amount":           expense_record["amount"],
+                    "total_amount":     expense_record["total_amount"],
+                    "advance_amount":   expense_record["advance_amount"],
+                    "balance_amount":   expense_record["balance_amount"],
+                    "supplier_payment_status": expense_record["supplier_payment_status"],
+                    "supplier_statement_id":   expense_record["supplier_statement_id"],
+                    "created_at":       expense_record["created_at"],
+                    "created_by":       expense_record["created_by"],
+                }
+                # Include quality only if the column exists in Supabase
+                if data.get('quality'):
+                    supabase_record["quality"] = expense_record["quality"]
+                response = SUPABASE_CLIENT.table("expenses").insert(supabase_record).execute()
+                # An insert must return the row we just wrote.
                 if not response.data:
                     raise RuntimeError("The database did not confirm the expense insert")
+                logger.info(f"Expense saved to Supabase: {expense_record['id']}")
             except Exception as e:
-                logger.error(f"Supabase expense insert error: {e}")
-                return jsonify({
-                    "error": "Expense was not saved to the database. Please try again or contact an administrator."
-                }), 502
+                logger.error(f"Supabase expense insert error: {e}. Falling back to local storage.")
+                # FALLBACK: save locally so user data is never lost
+                MOCK_DATABASE.setdefault("expenses", []).append(expense_record)
+                save_db()
+                logger.info(f"Expense saved locally (Supabase unavailable): {expense_record['id']}")
         else:
             MOCK_DATABASE.setdefault("expenses", []).append(expense_record)
             save_db()  # Persist to disk

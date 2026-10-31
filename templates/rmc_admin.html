@@ -259,6 +259,7 @@
                     <button class="rmc-tab active" data-tab="dashboard">Dashboard</button>
                     <button class="rmc-tab" data-tab="orders">Orders</button>
                     <button class="rmc-tab" data-tab="clients">Clients</button>
+                    <button class="rmc-tab" data-tab="quotations" style="color: #D4AF37; font-weight: bold; letter-spacing: 1px;">QUOTATION</button>
                     <button class="rmc-tab" data-tab="invoices">Invoices</button>
                     <button class="rmc-tab" data-tab="billing-expense">Billing & Expense</button>
                     <button class="rmc-tab" data-tab="reports">Reports</button>
@@ -331,6 +332,26 @@
                     </div>
                     <div class="panel-body">
                         <div id="clients-list" class="rmc-list">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quotations Tab -->
+        <section id="quotations-tab" class="rmc-tab-content">
+            <div class="section-container">
+                <div class="rmc-panel">
+                    <div class="panel-header">
+                        <h2>Quotations</h2>
+                        <div class="header-actions" style="display:flex; gap:10px;">
+                            <button class="btn-outline" onclick="showQuotationSettingsModal()">⚙️ Settings</button>
+                            <button class="btn-gold" onclick="showAddQuotationModal()">+ New Quotation</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <div id="quotations-list" class="rmc-list">
                             <div class="loading-spinner"></div>
                         </div>
                     </div>
@@ -482,6 +503,157 @@
             <div id="order-detail-content">
                 <!-- Dynamic content -->
             </div>
+        </div>
+    </div>
+
+    <!-- Quotation Modals -->
+    <!-- New Quotation Modal -->
+    <div id="add-quotation-modal" class="modal hidden">
+        <div class="modal-content large-modal">
+            <div class="modal-header">
+                <h3>New Quotation</h3>
+                <button class="modal-close" onclick="closeModal('add-quotation-modal')">×</button>
+            </div>
+            <form id="add-quotation-form" class="rmc-form">
+                <div class="form-row" style="display:flex; gap:15px; margin-bottom:15px; flex-wrap:wrap;">
+                    <div class="form-group" style="flex:1; min-width: 200px;">
+                        <label>Select Existing Client</label>
+                        <select id="q-client-select" onchange="fillClientDetailsForQuotation(this.value)">
+                            <option value="">-- Custom / New Client --</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1; min-width: 150px;">
+                        <label>Quotation Date *</label>
+                        <input type="date" id="q-date" required>
+                    </div>
+                    <div class="form-group" style="flex:1; min-width: 150px;">
+                        <label>Validity (Days) *</label>
+                        <input type="number" id="q-validity" value="15" required>
+                    </div>
+                </div>
+                
+                <h4 style="margin: 15px 0 10px; color: #D4AF37;">Client Details</h4>
+                <div class="form-row" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:15px;">
+                    <div class="form-group">
+                        <label>Company Name *</label>
+                        <input type="text" id="q-company-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Contact Person</label>
+                        <input type="text" id="q-client-name">
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="q-email">
+                    </div>
+                    <div class="form-group">
+                        <label>Phone *</label>
+                        <input type="text" id="q-phone" required>
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label>Billing Address *</label>
+                        <textarea id="q-address" rows="2" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>GST Number</label>
+                        <input type="text" id="q-gst-number">
+                    </div>
+                </div>
+
+                <h4 style="margin: 15px 0 10px; color: #D4AF37;">Line Items</h4>
+                <div class="table-responsive" style="overflow-x: auto;">
+                    <table class="rmc-table" id="q-items-table" style="min-width: 600px;">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th width="80">Qty</th>
+                                <th width="80">Unit</th>
+                                <th width="120">Rate (₹)</th>
+                                <th width="120">Amount (₹)</th>
+                                <th width="50"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="q-items-body">
+                            <!-- Items go here -->
+                        </tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn-outline" onclick="addQuotationItem()" style="margin-top:10px;">+ Add Line Item</button>
+
+                <div class="quotation-totals" style="margin-top:20px; padding:15px; background:#222; border-radius:8px; display:flex; flex-wrap:wrap; justify-content:space-between;">
+                    <div style="margin-bottom:15px;">
+                        <label style="display:flex; align-items:center; cursor:pointer; gap:8px; font-weight:bold; font-size:1.1em;">
+                            <input type="checkbox" id="q-include-gst" onchange="calculateQuotationTotals()" style="width:20px;height:20px;accent-color:#D4AF37;">
+                            Include GST
+                        </label>
+                        <div id="q-gst-type-container" class="hidden" style="margin-top:10px; margin-left:28px;">
+                            <label style="cursor:pointer;">
+                                <input type="radio" name="q_gst_type" value="intra" checked onchange="calculateQuotationTotals()" style="accent-color:#D4AF37;"> CGST/SGST (18%)
+                            </label>
+                            <label style="margin-left:15px; cursor:pointer;">
+                                <input type="radio" name="q_gst_type" value="inter" onchange="calculateQuotationTotals()" style="accent-color:#D4AF37;"> IGST (18%)
+                            </label>
+                        </div>
+                    </div>
+                    <div style="text-align:right; font-size:1.1em; line-height:1.6; min-width:200px;">
+                        <div>Subtotal: <span id="q-subtotal">₹ 0.00</span></div>
+                        <div id="q-gst-details" class="hidden">
+                            <div id="q-cgst-row" style="color:#aaa;">CGST (9%): <span id="q-cgst">₹ 0.00</span></div>
+                            <div id="q-sgst-row" style="color:#aaa;">SGST (9%): <span id="q-sgst">₹ 0.00</span></div>
+                            <div id="q-igst-row" class="hidden" style="color:#aaa;">IGST (18%): <span id="q-igst">₹ 0.00</span></div>
+                        </div>
+                        <div style="color:#D4AF37; font-size:1.4em; font-weight:bold; margin-top:10px; border-top:1px solid #444; padding-top:10px;">
+                            Grand Total: <span id="q-grand-total">₹ 0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top:15px;">
+                    <label>Notes (Optional)</label>
+                    <textarea id="q-notes" rows="2"></textarea>
+                </div>
+                
+                <button type="submit" class="btn-gold btn-block" style="margin-top:20px; font-size:1.1em; padding:12px;">Generate Quotation</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- View Quotation Modal -->
+    <div id="view-quotation-modal" class="modal hidden">
+        <div class="modal-content large-modal">
+            <div class="modal-header">
+                <h3>Quotation Details</h3>
+                <button class="modal-close" onclick="closeModal('view-quotation-modal')">×</button>
+            </div>
+            <div id="view-quotation-content" style="padding:10px;">
+                <!-- Content generated via JS -->
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:15px; margin-top:20px; padding-top:15px; border-top:1px solid #333;">
+                <button class="btn-gold" id="btn-view-pdf" onclick="openQuotationPdf()" style="flex:1; min-width:150px;">📄 View PDF</button>
+                <button class="btn-gold" id="btn-convert-invoice" onclick="convertQuotationToInvoice()" style="flex:1; background:#4CAF50; min-width:200px;">✅ Convert to Order & Invoice</button>
+                <button class="btn-outline" style="color:#f44336; border-color:#f44336; flex:1; min-width:100px; max-width:150px;" onclick="deleteQuotation()">🗑️ Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quotation Settings Modal -->
+    <div id="quotation-settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Quotation Settings</h3>
+                <button class="modal-close" onclick="closeModal('quotation-settings-modal')">×</button>
+            </div>
+            <form id="quotation-settings-form" class="rmc-form">
+                <div class="form-group">
+                    <label>Default Validity (Days)</label>
+                    <input type="number" id="qs-default-validity" required>
+                </div>
+                <div class="form-group">
+                    <label>Default Terms & Conditions (One per line)</label>
+                    <textarea id="qs-default-terms" rows="8" required style="font-family:monospace; line-height:1.4;"></textarea>
+                </div>
+                <button type="submit" class="btn-gold btn-block">Save Settings</button>
+            </form>
         </div>
     </div>
 

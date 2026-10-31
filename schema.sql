@@ -407,6 +407,7 @@ create table if not exists expenses (
     company_name text,
     gst_no text,
     material_type text,
+    quality text,
     quantity text,
     rate_per_ton text,
     amount numeric default 0,
@@ -422,6 +423,7 @@ create table if not exists expenses (
 -- Existing installations created before GST support need this migration too.
 -- `create table if not exists` does not add a new column to an existing table.
 alter table expenses add column if not exists gst_no text;
+alter table expenses add column if not exists quality text;
 alter table expenses add column if not exists company_name text;
 alter table expenses add column if not exists supplier_payment_status text default 'unpaid';
 alter table expenses add column if not exists supplier_statement_id text;
