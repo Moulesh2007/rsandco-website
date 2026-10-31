@@ -555,6 +555,7 @@
         <div class="tabs">
             <div class="tab active" data-tab="manual-billing">Manual Billing</div>
             <div class="tab" data-tab="expenses">Expense Management</div>
+            <div class="tab" data-tab="suppliers">🏭 Suppliers</div>
             <div class="tab" data-tab="supplier-payment">Supplier Payment Summary</div>
             <div class="tab" data-tab="client-billing">Client Billing Summary</div>
             <div class="tab" data-tab="reports">Reports & Export</div>
@@ -702,6 +703,658 @@
                 </div>
             </div>
         </div>
+
+        <!-- ══════════════════ SUPPLIERS TAB ══════════════════ -->
+        <div class="tab-content" id="suppliers">
+
+            <style>
+                /* ── Supplier Cards ───────────────────────────── */
+                .supplier-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }
+                .supplier-card {
+                    background: linear-gradient(135deg, #2a2a2a 0%, #1f1c10 100%);
+                    border: 1px solid #D4AF37;
+                    border-radius: 12px;
+                    padding: 22px;
+                    cursor: pointer;
+                    transition: all .3s ease;
+                    position: relative;
+                    overflow: hidden;
+                }
+                .supplier-card::before {
+                    content: '';
+                    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+                    background: linear-gradient(90deg, #D4AF37, #f5d97a);
+                }
+                .supplier-card:hover {
+                    transform: translateY(-4px);
+                    box-shadow: 0 8px 30px rgba(212,175,55,.25);
+                    border-color: #f5d97a;
+                }
+                .supplier-card h3 {
+                    color: #D4AF37; font-size: 16px; font-weight: 700;
+                    margin-bottom: 10px; letter-spacing: .5px;
+                }
+                .supplier-card .sup-meta { color: #aaa; font-size: 12px; margin-bottom: 6px; }
+                .supplier-card .sup-meta span { color: #fff; font-weight: 600; }
+                .supplier-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+                .sup-tag {
+                    padding: 3px 10px; border-radius: 20px;
+                    background: rgba(212,175,55,.15); border: 1px solid #D4AF37;
+                    color: #D4AF37; font-size: 11px; font-weight: 600;
+                }
+                .supplier-card .sup-actions {
+                    margin-top: 14px; display: flex; gap: 8px;
+                }
+                .btn-view-sup {
+                    flex: 1; padding: 8px; background: #D4AF37; color: #1a1a1a;
+                    border: none; border-radius: 6px; font-size: 12px;
+                    font-weight: 700; cursor: pointer; transition: background .2s;
+                }
+                .btn-view-sup:hover { background: #f5d97a; }
+                .btn-del-sup {
+                    padding: 8px 12px; background: transparent;
+                    border: 1px solid #ef4444; color: #ef4444;
+                    border-radius: 6px; font-size: 12px; cursor: pointer;
+                    transition: all .2s;
+                }
+                .btn-del-sup:hover { background: #ef4444; color: #fff; }
+
+                /* ── Add Supplier Modal ───────────────────────── */
+                #sup-modal-overlay {
+                    display: none; position: fixed; inset: 0;
+                    background: rgba(0,0,0,.75); z-index: 9000;
+                    align-items: center; justify-content: center;
+                }
+                #sup-modal-overlay.open { display: flex; }
+                #sup-modal {
+                    background: #1a1a1a; border: 1px solid #D4AF37;
+                    border-radius: 14px; padding: 32px; width: 90%; max-width: 560px;
+                    animation: fadeIn .25s ease;
+                }
+                #sup-modal h2 { color: #D4AF37; margin-bottom: 22px; font-size: 20px; }
+                .material-checkboxes {
+                    display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+                }
+                .mat-cb-label {
+                    display: flex; align-items: center; gap: 6px;
+                    padding: 7px 14px; background: #2a2a2a; border: 1px solid #555;
+                    border-radius: 20px; cursor: pointer; font-size: 13px; color: #ccc;
+                    transition: all .2s; user-select: none;
+                }
+                .mat-cb-label input { display: none; }
+                .mat-cb-label.checked {
+                    background: rgba(212,175,55,.15);
+                    border-color: #D4AF37; color: #D4AF37;
+                }
+
+                /* ── Supplier Detail View ─────────────────────── */
+                #supplier-detail-view {
+                    display: none;
+                    animation: fadeIn .3s ease;
+                }
+                #supplier-detail-view.open { display: block; }
+                .sup-detail-header {
+                    display: flex; align-items: center; gap: 16px;
+                    margin-bottom: 24px; flex-wrap: wrap;
+                }
+                .sup-detail-header h2 {
+                    color: #D4AF37; font-size: 24px; flex: 1;
+                }
+                .sup-detail-meta {
+                    display: flex; gap: 20px; flex-wrap: wrap;
+                    background: #2a2a2a; border: 1px solid #333;
+                    border-radius: 10px; padding: 16px; margin-bottom: 24px;
+                }
+                .sup-detail-meta .sdm-item { flex: 1; min-width: 140px; }
+                .sup-detail-meta .sdm-label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+                .sup-detail-meta .sdm-value { color: #fff; font-size: 14px; font-weight: 600; margin-top: 4px; }
+
+                /* ── Supplier expense form ──────────────────────── */
+                #sup-expense-form-wrap {
+                    background: linear-gradient(135deg,#1f1f1f,#2a2410);
+                    border: 1px solid #D4AF37; border-radius: 12px;
+                    padding: 24px; margin-bottom: 28px;
+                }
+                #sup-expense-form-wrap h3 { color: #D4AF37; margin-bottom: 18px; }
+            </style>
+
+            <!-- Suppliers List View -->
+            <div id="suppliers-list-view">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+                    <div>
+                        <h2 style="color:#D4AF37; font-size:22px; margin-bottom:4px;">Raw Material Suppliers</h2>
+                        <p style="color:#888; font-size:13px;">Manage suppliers and view their individual expense records</p>
+                    </div>
+                    <button class="btn-primary" onclick="openAddSupplierModal()" style="display:flex;align-items:center;gap:8px;">
+                        ➕ Add New Supplier
+                    </button>
+                </div>
+
+                <!-- Stats row -->
+                <div class="stats-grid" style="grid-template-columns:repeat(3,1fr); margin-bottom:24px;">
+                    <div class="stat-card"><h3>Total Suppliers</h3><div class="value" id="sup-stat-count">0</div></div>
+                    <div class="stat-card"><h3>Total Supplier Spend</h3><div class="value" id="sup-stat-spend">₹0</div></div>
+                    <div class="stat-card"><h3>Materials Tracked</h3><div class="value" id="sup-stat-materials">0</div></div>
+                </div>
+
+                <!-- Supplier Cards Grid -->
+                <div class="supplier-grid" id="supplier-cards-container">
+                    <div style="color:#888; font-style:italic;">Loading suppliers…</div>
+                </div>
+            </div>
+
+            <!-- Supplier Detail View (shown when a card is clicked) -->
+            <div id="supplier-detail-view">
+                <button onclick="closeSupplierDetail()" class="btn-secondary"
+                    style="margin-bottom:20px; display:inline-flex; align-items:center; gap:6px;">
+                    ← Back to Suppliers
+                </button>
+
+                <div class="sup-detail-header">
+                    <h2 id="sup-detail-name">Supplier Name</h2>
+                    <div class="supplier-tags" id="sup-detail-tags"></div>
+                </div>
+
+                <div class="sup-detail-meta">
+                    <div class="sdm-item">
+                        <div class="sdm-label">GST Number</div>
+                        <div class="sdm-value" id="sup-detail-gst">—</div>
+                    </div>
+                    <div class="sdm-item">
+                        <div class="sdm-label">Phone</div>
+                        <div class="sdm-value" id="sup-detail-phone">—</div>
+                    </div>
+                    <div class="sdm-item">
+                        <div class="sdm-label">Address</div>
+                        <div class="sdm-value" id="sup-detail-address">—</div>
+                    </div>
+                    <div class="sdm-item">
+                        <div class="sdm-label">Total Spend</div>
+                        <div class="sdm-value" style="color:#D4AF37;" id="sup-detail-spend">₹0.00</div>
+                    </div>
+                    <div class="sdm-item">
+                        <div class="sdm-label">Balance Due</div>
+                        <div class="sdm-value" style="color:#f87171;" id="sup-detail-balance">₹0.00</div>
+                    </div>
+                </div>
+
+                <!-- Add Expense for this Supplier -->
+                <div id="sup-expense-form-wrap">
+                    <h3>➕ Add New Expense Record</h3>
+                    <form id="sup-expense-form" onsubmit="submitSupplierExpense(event)">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <input type="date" id="sup-exp-date" required placeholder=" ">
+                                <label>Date *</label>
+                            </div>
+                            <div class="form-group">
+                                <select id="sup-exp-material" required>
+                                    <option value="">Select Material</option>
+                                    <option value="Cement">Cement</option>
+                                    <option value="M-Sand">M-Sand</option>
+                                    <option value="Jelly 20mm">Jelly 20mm</option>
+                                    <option value="Jelly 12mm">Jelly 12mm</option>
+                                    <option value="Dust">Dust</option>
+                                    <option value="Chemical">Chemical</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                                <label>Material Type *</label>
+                            </div>
+                            <div class="form-group">
+                                <input type="text" id="sup-exp-quality" placeholder=" ">
+                                <label>Quality / Grade</label>
+                            </div>
+                            <div class="form-group">
+                                <input type="text" id="sup-exp-quantity" placeholder=" " oninput="calcSupExpTotal()">
+                                <label>Quantity (Tons / Units)</label>
+                            </div>
+                            <div class="form-group">
+                                <input type="number" id="sup-exp-rate" step="0.01" placeholder=" " oninput="calcSupExpTotal()">
+                                <label>Rate per Ton (₹) *</label>
+                            </div>
+                            <div class="form-group">
+                                <input type="number" id="sup-exp-advance" step="0.01" placeholder=" " value="0" oninput="calcSupExpTotal()">
+                                <label>Advance Given (₹)</label>
+                            </div>
+                        </div>
+                        <!-- Totals display -->
+                        <div class="calc-display" style="margin:12px 0 20px;">
+                            <div style="text-align:center;">
+                                <div style="color:#888;font-size:11px;letter-spacing:1px;text-transform:uppercase;">Total Amount</div>
+                                <div id="sup-exp-total-display" style="color:#D4AF37;font-size:22px;font-weight:700;margin-top:6px;">₹0.00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div style="color:#888;font-size:11px;letter-spacing:1px;text-transform:uppercase;">Advance Given</div>
+                                <div id="sup-exp-advance-display" style="color:#60a5fa;font-size:22px;font-weight:700;margin-top:6px;">₹0.00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div style="color:#888;font-size:11px;letter-spacing:1px;text-transform:uppercase;">Balance Due</div>
+                                <div id="sup-exp-balance-display" style="color:#f87171;font-size:22px;font-weight:700;margin-top:6px;">₹0.00</div>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <input type="text" id="sup-exp-desc" placeholder=" ">
+                            <label>Notes / Description</label>
+                        </div>
+                        <div style="margin-top:16px;">
+                            <button type="submit" class="btn-primary">💾 Save Expense Record</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Expense Records Table for this Supplier -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+                    <h3 style="color:#fff; font-size:16px;">Expense Records</h3>
+                    <div style="display:flex; gap:10px;">
+                        <input type="date" id="sup-filter-start" onchange="filterSupplierExpenses()"
+                            style="background:#2a2a2a;border:1px solid #D4AF37;color:#fff;padding:8px 10px;border-radius:6px;font-size:13px;">
+                        <input type="date" id="sup-filter-end" onchange="filterSupplierExpenses()"
+                            style="background:#2a2a2a;border:1px solid #D4AF37;color:#fff;padding:8px 10px;border-radius:6px;font-size:13px;">
+                        <button onclick="clearSupFilter()" class="btn-secondary" style="padding:8px 14px;font-size:12px;" type="button">Clear</button>
+                    </div>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="data-table" style="min-width:700px;">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Material</th>
+                                <th>Quality</th>
+                                <th>Quantity</th>
+                                <th>Rate/Ton</th>
+                                <th>Total (₹)</th>
+                                <th>Advance (₹)</th>
+                                <th>Balance (₹)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sup-expense-table-body">
+                            <tr><td colspan="9" style="text-align:center;color:#888;">No records yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Summary bar -->
+                <div style="background:#2a2a2a;border:1px solid #333;border-radius:8px;padding:16px;margin-top:16px;display:flex;gap:24px;flex-wrap:wrap;">
+                    <div>
+                        <div style="color:#888;font-size:11px;text-transform:uppercase;">Filtered Total</div>
+                        <div id="sup-exp-filtered-total" style="color:#D4AF37;font-size:18px;font-weight:700;">₹0.00</div>
+                    </div>
+                    <div>
+                        <div style="color:#888;font-size:11px;text-transform:uppercase;">Filtered Balance</div>
+                        <div id="sup-exp-filtered-balance" style="color:#f87171;font-size:18px;font-weight:700;">₹0.00</div>
+                    </div>
+                    <div>
+                        <div style="color:#888;font-size:11px;text-transform:uppercase;">Records</div>
+                        <div id="sup-exp-filtered-count" style="color:#fff;font-size:18px;font-weight:700;">0</div>
+                    </div>
+                </div>
+            </div>
+        </div><!-- end #suppliers tab-content -->
+
+        <!-- ══════ Add Supplier Modal ══════ -->
+        <div id="sup-modal-overlay" onclick="closeAddSupplierModal(event)">
+            <div id="sup-modal" onclick="event.stopPropagation()">
+                <h2>🏭 Add New Supplier</h2>
+                <form id="add-supplier-form" onsubmit="submitNewSupplier(event)">
+                    <div class="form-group">
+                        <input type="text" id="new-sup-name" required placeholder=" " style="text-transform:uppercase;">
+                        <label>Company Name *</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" id="new-sup-gst" placeholder=" ">
+                        <label>GST Number</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="tel" id="new-sup-phone" placeholder=" ">
+                        <label>Phone Number</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" id="new-sup-address" placeholder=" ">
+                        <label>Address</label>
+                    </div>
+                    <div style="margin-bottom:20px;">
+                        <div style="color:#888;font-size:12px;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;">Materials Supplied</div>
+                        <div class="material-checkboxes" id="material-checkboxes">
+                            <!-- populated by JS -->
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;justify-content:flex-end;">
+                        <button type="button" class="btn-secondary" onclick="closeAddSupplierModal()">Cancel</button>
+                        <button type="submit" class="btn-primary">💾 Save Supplier</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script>
+        // ─── Supplier Management JS ────────────────────────────────────────────
+        const MATERIALS_LIST = ['Cement','M-Sand','Jelly 20mm','Jelly 12mm','Dust','Chemical'];
+        let _allSuppliers     = [];
+        let _activeSupplier   = null;
+        let _supplierExpenses = [];
+
+        const fmt = n => '₹' + parseFloat(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+        // ── Load all suppliers ────────────────────────────────────────────────
+        async function loadSuppliers() {
+            try {
+                const res  = await fetch('/api/suppliers');
+                const json = await res.json();
+                _allSuppliers = json.data || [];
+                renderSupplierCards();
+                updateSupplierStats();
+            } catch(e) {
+                console.error('Load suppliers error:', e);
+            }
+        }
+
+        function renderSupplierCards() {
+            const container = document.getElementById('supplier-cards-container');
+            if (!_allSuppliers.length) {
+                container.innerHTML = '<div style="color:#888;font-style:italic;grid-column:1/-1;">No suppliers added yet. Click "Add New Supplier" to get started.</div>';
+                return;
+            }
+            container.innerHTML = _allSuppliers.map(s => {
+                const mats = Array.isArray(s.materials_supplied) ? s.materials_supplied
+                           : (s.materials_supplied||'').split(',').filter(Boolean);
+                const tagsHtml = mats.map(m => `<span class="sup-tag">${m}</span>`).join('');
+                return `<div class="supplier-card" id="supcard-${s.id}">
+                    <h3>🏭 ${s.company_name}</h3>
+                    ${s.gst_no ? `<div class="sup-meta">GST: <span>${s.gst_no}</span></div>` : ''}
+                    ${s.phone   ? `<div class="sup-meta">📞 <span>${s.phone}</span></div>` : ''}
+                    <div class="supplier-tags">${tagsHtml || '<span style="color:#666;font-size:12px;">No materials listed</span>'}</div>
+                    <div class="sup-actions">
+                        <button class="btn-view-sup" onclick="openSupplierDetail('${s.id}')">📋 View Records</button>
+                        <button class="btn-del-sup"  onclick="deleteSupplier('${s.id}', event)">🗑</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function updateSupplierStats() {
+            document.getElementById('sup-stat-count').textContent = _allSuppliers.length;
+            const allMats = new Set(_allSuppliers.flatMap(s =>
+                Array.isArray(s.materials_supplied) ? s.materials_supplied
+                : (s.materials_supplied||'').split(',').filter(Boolean)));
+            document.getElementById('sup-stat-materials').textContent = allMats.size;
+            // spend calculated after expenses load
+        }
+
+        // ── Open / Close Supplier Detail ─────────────────────────────────────
+        async function openSupplierDetail(supplierId) {
+            _activeSupplier = _allSuppliers.find(s => s.id === supplierId);
+            if (!_activeSupplier) return;
+
+            // Show detail view, hide list
+            document.getElementById('suppliers-list-view').style.display = 'none';
+            const dv = document.getElementById('supplier-detail-view');
+            dv.classList.add('open');
+
+            // Populate header
+            document.getElementById('sup-detail-name').textContent = _activeSupplier.company_name;
+            const mats = Array.isArray(_activeSupplier.materials_supplied) ? _activeSupplier.materials_supplied
+                       : (_activeSupplier.materials_supplied||'').split(',').filter(Boolean);
+            document.getElementById('sup-detail-tags').innerHTML =
+                mats.map(m => `<span class="sup-tag">${m}</span>`).join('') || '';
+            document.getElementById('sup-detail-gst').textContent     = _activeSupplier.gst_no    || '—';
+            document.getElementById('sup-detail-phone').textContent   = _activeSupplier.phone     || '—';
+            document.getElementById('sup-detail-address').textContent = _activeSupplier.address   || '—';
+
+            // Pre-fill material dropdown with supplier's materials
+            const matSel = document.getElementById('sup-exp-material');
+            matSel.innerHTML = '<option value="">Select Material</option>';
+            (mats.length ? mats : MATERIALS_LIST).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                matSel.appendChild(opt);
+            });
+            // Add Other at end
+            const other = document.createElement('option');
+            other.value = 'Other'; other.textContent = 'Other';
+            matSel.appendChild(other);
+
+            // Set today's date
+            document.getElementById('sup-exp-date').valueAsDate = new Date();
+            clearSupFilter();
+
+            // Load expenses
+            await loadSupplierExpenses(supplierId);
+        }
+
+        function closeSupplierDetail() {
+            document.getElementById('supplier-detail-view').classList.remove('open');
+            document.getElementById('suppliers-list-view').style.display = '';
+            _activeSupplier = null;
+            _supplierExpenses = [];
+        }
+
+        // ── Load & render supplier expenses ──────────────────────────────────
+        async function loadSupplierExpenses(supplierId) {
+            try {
+                const res  = await fetch(`/api/suppliers/${supplierId}/expenses`);
+                const json = await res.json();
+                _supplierExpenses = json.data || [];
+                renderSupplierExpenses(_supplierExpenses);
+                updateSupplierDetailTotals(_supplierExpenses);
+            } catch(e) {
+                console.error('Load supplier expenses error:', e);
+            }
+        }
+
+        function renderSupplierExpenses(records) {
+            const tbody = document.getElementById('sup-expense-table-body');
+            if (!records.length) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#888;">No expense records yet for this supplier</td></tr>';
+                updateSupExpFilteredBar([]);
+                return;
+            }
+            tbody.innerHTML = records.map(r => {
+                const bal = parseFloat(r.balance_amount||r.total_amount||0);
+                const balColor = bal > 0 ? '#f87171' : '#4ade80';
+                return `<tr>
+                    <td>${r.date||'—'}</td>
+                    <td>${r.material_type||r.category||'—'}</td>
+                    <td>${r.quality||'—'}</td>
+                    <td>${r.quantity||'—'}</td>
+                    <td>${r.rate_per_ton ? '₹'+parseFloat(r.rate_per_ton).toLocaleString('en-IN') : '—'}</td>
+                    <td style="color:#D4AF37;font-weight:600;">${fmt(r.total_amount||r.amount)}</td>
+                    <td style="color:#60a5fa;">${fmt(r.advance_amount)}</td>
+                    <td style="color:${balColor};font-weight:600;">${fmt(bal)}</td>
+                    <td>
+                        <div class="expense-action-buttons" style="display:flex;gap:6px;">
+                            <button onclick="window.open('/api/expenses/${r.id}/pdf','_blank')" class="btn-pdf" style="padding:5px 10px;font-size:11px;">PDF</button>
+                            <button onclick="deleteSupplierExpense('${r.id}')" class="btn-del" style="padding:5px 10px;font-size:11px;">🗑</button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+            updateSupExpFilteredBar(records);
+        }
+
+        function updateSupplierDetailTotals(records) {
+            const total   = records.reduce((a,r)=>a+parseFloat(r.total_amount||r.amount||0),0);
+            const balance = records.reduce((a,r)=>a+parseFloat(r.balance_amount||r.total_amount||0),0);
+            document.getElementById('sup-detail-spend').textContent   = fmt(total);
+            document.getElementById('sup-detail-balance').textContent = fmt(balance);
+        }
+
+        function updateSupExpFilteredBar(records) {
+            const total   = records.reduce((a,r)=>a+parseFloat(r.total_amount||r.amount||0),0);
+            const balance = records.reduce((a,r)=>a+parseFloat(r.balance_amount||r.total_amount||0),0);
+            document.getElementById('sup-exp-filtered-total').textContent   = fmt(total);
+            document.getElementById('sup-exp-filtered-balance').textContent = fmt(balance);
+            document.getElementById('sup-exp-filtered-count').textContent   = records.length;
+        }
+
+        function filterSupplierExpenses() {
+            const start = document.getElementById('sup-filter-start').value;
+            const end   = document.getElementById('sup-filter-end').value;
+            let filtered = _supplierExpenses;
+            if (start) filtered = filtered.filter(r => r.date >= start);
+            if (end)   filtered = filtered.filter(r => r.date <= end);
+            renderSupplierExpenses(filtered);
+        }
+
+        function clearSupFilter() {
+            document.getElementById('sup-filter-start').value = '';
+            document.getElementById('sup-filter-end').value   = '';
+            renderSupplierExpenses(_supplierExpenses);
+        }
+
+        // ── Calc totals in add-expense form ──────────────────────────────────
+        function calcSupExpTotal() {
+            const qty  = parseFloat(document.getElementById('sup-exp-quantity').value) || 0;
+            const rate = parseFloat(document.getElementById('sup-exp-rate').value)     || 0;
+            const adv  = parseFloat(document.getElementById('sup-exp-advance').value)  || 0;
+            const total = qty * rate;
+            const bal   = Math.max(0, total - adv);
+            document.getElementById('sup-exp-total-display').textContent   = fmt(total);
+            document.getElementById('sup-exp-advance-display').textContent = fmt(adv);
+            document.getElementById('sup-exp-balance-display').textContent = fmt(bal);
+        }
+
+        // ── Submit expense for this supplier ─────────────────────────────────
+        async function submitSupplierExpense(ev) {
+            ev.preventDefault();
+            if (!_activeSupplier) return;
+            const qty    = parseFloat(document.getElementById('sup-exp-quantity').value) || 0;
+            const rate   = parseFloat(document.getElementById('sup-exp-rate').value)     || 0;
+            const adv    = parseFloat(document.getElementById('sup-exp-advance').value)  || 0;
+            const total  = qty * rate;
+            const bal    = Math.max(0, total - adv);
+            const payload = {
+                category:         'Raw Material',
+                date:             document.getElementById('sup-exp-date').value,
+                material_type:    document.getElementById('sup-exp-material').value,
+                quality:          document.getElementById('sup-exp-quality').value,
+                quantity:         document.getElementById('sup-exp-quantity').value,
+                rate_per_ton:     document.getElementById('sup-exp-rate').value,
+                amount:           total,
+                total_amount:     total,
+                advance_amount:   adv,
+                balance_amount:   bal,
+                description:      document.getElementById('sup-exp-desc').value,
+                company_name:     _activeSupplier.company_name,
+                gst_no:           _activeSupplier.gst_no || '',
+                supplier_id:      _activeSupplier.id,
+                supplier_name:    _activeSupplier.company_name,
+                supplier_payment_status: 'unpaid',
+            };
+            try {
+                const res  = await fetch('/api/expenses', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (json.success) {
+                    showToast('Expense saved successfully!', 'success');
+                    document.getElementById('sup-expense-form').reset();
+                    document.getElementById('sup-exp-advance').value = '0';
+                    calcSupExpTotal();
+                    await loadSupplierExpenses(_activeSupplier.id);
+                } else {
+                    showToast('Error: ' + (json.error || 'Unknown error'), 'error');
+                }
+            } catch(e) {
+                showToast('Network error. Please try again.', 'error');
+            }
+        }
+
+        // ── Delete supplier expense ───────────────────────────────────────────
+        async function deleteSupplierExpense(expenseId) {
+            if (!confirm('Delete this expense record?')) return;
+            try {
+                await fetch(`/api/expenses/${expenseId}`, {method:'DELETE'});
+                showToast('Record deleted.', 'success');
+                if (_activeSupplier) await loadSupplierExpenses(_activeSupplier.id);
+            } catch(e) {
+                showToast('Delete failed.', 'error');
+            }
+        }
+
+        // ── Delete supplier ───────────────────────────────────────────────────
+        async function deleteSupplier(supplierId, ev) {
+            ev.stopPropagation();
+            if (!confirm('Delete this supplier? Their expense records will remain.')) return;
+            try {
+                await fetch(`/api/suppliers/${supplierId}`, {method:'DELETE'});
+                showToast('Supplier deleted.', 'success');
+                await loadSuppliers();
+            } catch(e) {
+                showToast('Delete failed.', 'error');
+            }
+        }
+
+        // ── Add Supplier Modal ────────────────────────────────────────────────
+        function openAddSupplierModal() {
+            // Build material checkboxes
+            const wrap = document.getElementById('material-checkboxes');
+            wrap.innerHTML = MATERIALS_LIST.map(m => `
+                <label class="mat-cb-label" id="matlabel-${m.replace(/\s/g,'_')}"
+                    onclick="toggleMatCb(this)">
+                    <input type="checkbox" value="${m}"> ${m}
+                </label>`).join('');
+            document.getElementById('add-supplier-form').reset();
+            document.getElementById('sup-modal-overlay').classList.add('open');
+        }
+
+        function toggleMatCb(label) {
+            const cb = label.querySelector('input');
+            cb.checked = !cb.checked;
+            label.classList.toggle('checked', cb.checked);
+        }
+
+        function closeAddSupplierModal(ev) {
+            if (ev && ev.target !== document.getElementById('sup-modal-overlay')) return;
+            document.getElementById('sup-modal-overlay').classList.remove('open');
+        }
+
+        async function submitNewSupplier(ev) {
+            ev.preventDefault();
+            const checkedMats = [...document.querySelectorAll('#material-checkboxes input:checked')]
+                                .map(cb => cb.value);
+            const payload = {
+                company_name:      document.getElementById('new-sup-name').value.trim().toUpperCase(),
+                gst_no:            document.getElementById('new-sup-gst').value.trim(),
+                phone:             document.getElementById('new-sup-phone').value.trim(),
+                address:           document.getElementById('new-sup-address').value.trim(),
+                materials_supplied: checkedMats,
+            };
+            try {
+                const res  = await fetch('/api/suppliers', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (json.success || res.ok) {
+                    showToast('Supplier added successfully!', 'success');
+                    document.getElementById('sup-modal-overlay').classList.remove('open');
+                    await loadSuppliers();
+                } else {
+                    showToast('Error: ' + (json.error || 'Failed to save'), 'error');
+                }
+            } catch(e) {
+                showToast('Network error. Please try again.', 'error');
+            }
+        }
+
+        // ── Load suppliers when tab becomes active ────────────────────────────
+        document.addEventListener('DOMContentLoaded', () => {
+            // Hook into existing tab switching
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    if (tab.dataset.tab === 'suppliers') loadSuppliers();
+                });
+            });
+        });
+        </script>
 
         <!-- Expenses Tab -->
         <div class="tab-content" id="expenses">

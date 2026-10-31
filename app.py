@@ -89,7 +89,7 @@ import json
 DB_FILE = os.path.join(os.path.dirname(__file__), 'data', 'db.json')
 
 # Keys that are user-created and must be persisted across restarts
-PERSISTED_KEYS = ['manual_billing', 'expenses', 'rmc_orders', 'rmc_order_items',
+PERSISTED_KEYS = ['manual_billing', 'expenses', 'suppliers', 'rmc_orders', 'rmc_order_items',
                    'rmc_invoices', 'rmc_payments', 'rmc_clients', 'submissions', 'newsletter',
                    'rmc_users', 'client_billing_summaries', 'supplier_payment_summaries',
                    'rmc_quotations', 'rmc_quotation_items', 'rmc_quotation_settings']
@@ -208,6 +208,13 @@ MOCK_DATABASE = {
     "client_billing_summaries": [],
     "supplier_payment_summaries": [],
     "expenses": [],
+    "suppliers": [
+        {"id": "sup-001", "company_name": "JJ SUPPLIER",      "materials_supplied": ["Cement", "M-Sand"], "gst_no": "", "phone": "", "address": "", "created_at": "2026-01-01T00:00:00", "created_by": "admin"},
+        {"id": "sup-002", "company_name": "UYALIAMMAN",        "materials_supplied": ["Jelly 20mm", "Jelly 12mm"], "gst_no": "", "phone": "", "address": "", "created_at": "2026-01-01T00:00:00", "created_by": "admin"},
+        {"id": "sup-003", "company_name": "MURUGAN",           "materials_supplied": ["M-Sand", "Dust"], "gst_no": "", "phone": "", "address": "", "created_at": "2026-01-01T00:00:00", "created_by": "admin"},
+        {"id": "sup-004", "company_name": "GANAPATHY",         "materials_supplied": ["Cement", "Chemical"], "gst_no": "", "phone": "", "address": "", "created_at": "2026-01-01T00:00:00", "created_by": "admin"},
+        {"id": "sup-005", "company_name": "NSR",               "materials_supplied": ["Jelly 20mm", "M-Sand", "Dust"], "gst_no": "", "phone": "", "address": "", "created_at": "2026-01-01T00:00:00", "created_by": "admin"}
+    ],
     "plants": [
         {
             "id": "plant-1",
@@ -2705,6 +2712,137 @@ def export_manual_billing_excel():
     response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     return response
 
+# ── Supplier Management Module ────────────────────────────────────────────────
+
+def _get_suppliers():
+    """Fetch all suppliers: Supabase first, merge with local fallback."""
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("suppliers").select("*").execute()
+            supabase_rows = resp.data if resp.data else []
+            local_rows = MOCK_DATABASE.get("suppliers", [])
+            sb_ids = {r.get("id") for r in supabase_rows}
+            return supabase_rows + [r for r in local_rows if r.get("id") not in sb_ids]
+        except Exception as e:
+            logger.error(f"Supabase suppliers fetch error: {e}")
+    return MOCK_DATABASE.get("suppliers", [])
+
+@app.route('/api/suppliers', methods=['GET', 'POST'])
+def suppliers_api():
+    if request.method == 'GET':
+        return jsonify({"success": True, "data": _get_suppliers()})
+
+    # POST — create a new supplier
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not data.get('company_name'):
+        return jsonify({"error": "company_name is required"}), 400
+
+    materials = data.get('materials_supplied', [])
+    if isinstance(materials, str):
+        materials = [m.strip() for m in materials.split(',') if m.strip()]
+
+    record = {
+        "id":                str(uuid.uuid4()),
+        "company_name":      data.get('company_name', '').strip().upper(),
+        "materials_supplied": materials,
+        "gst_no":            data.get('gst_no', '').strip(),
+        "phone":             data.get('phone', '').strip(),
+        "address":           data.get('address', '').strip(),
+        "created_at":        datetime.now().isoformat(),
+        "created_by":        session.get('username', 'system'),
+    }
+
+    if SUPABASE_CLIENT:
+        try:
+            sb_rec = dict(record)
+            sb_rec['materials_supplied'] = ','.join(materials)   # store as CSV in Supabase
+            resp = SUPABASE_CLIENT.table("suppliers").insert(sb_rec).execute()
+            if not resp.data:
+                raise RuntimeError("Supabase did not confirm supplier insert")
+        except Exception as e:
+            logger.error(f"Supabase supplier insert error: {e}. Falling back to local.")
+            MOCK_DATABASE.setdefault("suppliers", []).append(record)
+            save_db()
+    else:
+        MOCK_DATABASE.setdefault("suppliers", []).append(record)
+        save_db()
+
+    return jsonify({"success": True, "data": record}), 201
+
+@app.route('/api/suppliers/<supplier_id>', methods=['GET', 'PUT', 'DELETE'])
+def supplier_detail(supplier_id):
+    if request.method == 'GET':
+        suppliers = _get_suppliers()
+        rec = next((s for s in suppliers if s.get('id') == supplier_id), None)
+        if not rec:
+            return jsonify({"error": "Supplier not found"}), 404
+        return jsonify({"success": True, "data": rec})
+
+    if request.method == 'PUT':
+        data = request.get_json(silent=True) or {}
+        materials = data.get('materials_supplied', None)
+        if isinstance(materials, str):
+            materials = [m.strip() for m in materials.split(',') if m.strip()]
+        if SUPABASE_CLIENT:
+            try:
+                upd = {k: v for k, v in data.items()}
+                if materials is not None:
+                    upd['materials_supplied'] = ','.join(materials)
+                SUPABASE_CLIENT.table("suppliers").update(upd).eq("id", supplier_id).execute()
+            except Exception as e:
+                logger.error(f"Supabase supplier update error: {e}")
+        # also update local copy
+        for rec in MOCK_DATABASE.get("suppliers", []):
+            if rec.get('id') == supplier_id:
+                rec.update(data)
+                if materials is not None:
+                    rec['materials_supplied'] = materials
+                break
+        save_db()
+        return jsonify({"success": True})
+
+    if request.method == 'DELETE':
+        if SUPABASE_CLIENT:
+            try:
+                SUPABASE_CLIENT.table("suppliers").delete().eq("id", supplier_id).execute()
+            except Exception as e:
+                logger.error(f"Supabase supplier delete error: {e}")
+        MOCK_DATABASE["suppliers"] = [s for s in MOCK_DATABASE.get("suppliers", []) if s.get('id') != supplier_id]
+        save_db()
+        return jsonify({"success": True})
+
+@app.route('/api/suppliers/<supplier_id>/expenses', methods=['GET'])
+def supplier_expenses(supplier_id):
+    """Return all expense records that belong to the given supplier."""
+    # Resolve supplier name for matching
+    suppliers = _get_suppliers()
+    supplier = next((s for s in suppliers if s.get('id') == supplier_id), None)
+    if not supplier:
+        return jsonify({"error": "Supplier not found"}), 404
+
+    # Fetch all expenses then filter by supplier_id OR company_name match
+    all_expenses = []
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("expenses").select("*").execute()
+            supabase_exp = resp.data if resp.data else []
+            local_exp = MOCK_DATABASE.get("expenses", [])
+            sb_ids = {e.get("id") for e in supabase_exp}
+            all_expenses = supabase_exp + [e for e in local_exp if e.get("id") not in sb_ids]
+        except Exception as e:
+            logger.error(f"Supabase expenses fetch error: {e}")
+            all_expenses = MOCK_DATABASE.get("expenses", [])
+    else:
+        all_expenses = MOCK_DATABASE.get("expenses", [])
+
+    supplier_name = supplier.get('company_name', '').upper()
+    filtered = [
+        e for e in all_expenses
+        if e.get('supplier_id') == supplier_id
+        or (e.get('company_name') or '').upper() == supplier_name
+    ]
+    return jsonify({"success": True, "data": filtered, "supplier": supplier})
+
 # Expense Management Module
 @app.route('/api/expenses', methods=['GET', 'POST'])
 def expenses():
@@ -2743,6 +2881,9 @@ def expenses():
             "description":    data.get('description', ''),
             "company_name":   data.get('company_name', data.get('description', '')),
             "gst_no":         data.get('gst_no', ''),
+            # Supplier link
+            "supplier_id":    data.get('supplier_id', ''),
+            "supplier_name":  data.get('supplier_name', ''),
             # Raw-material specific fields
             "material_type":  data.get('material_type', ''),
             "quality":        data.get('quality', ''),

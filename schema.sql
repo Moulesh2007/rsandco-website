@@ -421,12 +421,13 @@ create table if not exists expenses (
 );
 
 -- Existing installations created before GST support need this migration too.
--- `create table if not exists` does not add a new column to an existing table.
-alter table expenses add column if not exists gst_no text;
+-- `create table if not exists` does not add a new column to an existing tablalter table expenses add column if not exists gst_no text;
 alter table expenses add column if not exists quality text;
 alter table expenses add column if not exists company_name text;
 alter table expenses add column if not exists supplier_payment_status text default 'unpaid';
 alter table expenses add column if not exists supplier_statement_id text;
+alter table expenses add column if not exists supplier_id text;
+alter table expenses add column if not exists supplier_name text;
 
 alter table manual_billing enable row level security;
 alter table expenses enable row level security;
@@ -461,4 +462,26 @@ create policy "Allow all to users" on rmc_users for all using (true);
 create policy "Allow all to projects" on projects for all using (true);
 create policy "Allow all to plants" on plants for all using (true);
 create policy "Allow all to founder_ceo" on founder_ceo for all using (true);
+
+-- ==================== SUPPLIER MANAGEMENT ====================
+create table if not exists suppliers (
+    id text primary key,
+    company_name text not null,
+    materials_supplied text,      -- stored as CSV e.g. "Cement,M-Sand,Jelly 20mm"
+    gst_no text,
+    phone text,
+    address text,
+    created_at text,
+    created_by text
+);
+
+alter table suppliers enable row level security;
+drop policy if exists "Allow full access to suppliers" on suppliers;
+create policy "Allow full access to suppliers" on suppliers for all using (true);
+
+-- Supabase run-once migration for existing installs:
+-- alter table expenses add column if not exists supplier_id text;
+-- alter table expenses add column if not exists supplier_name text;
+
+;
 
