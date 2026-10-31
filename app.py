@@ -2803,6 +2803,25 @@ def expenses():
 
         return jsonify({"success": True, "data": expense_record})
 
+def _get_expense_record(expense_id):
+    """Look up an expense by ID from Supabase first, then local fallback storage.
+    Always checks local storage too so records saved during Supabase outages are found."""
+    rec = None
+    if SUPABASE_CLIENT:
+        try:
+            resp = SUPABASE_CLIENT.table("expenses").select("*").eq("id", expense_id).execute()
+            if resp.data:
+                rec = resp.data[0]
+        except Exception as e:
+            logger.error(f"Supabase expense fetch error: {e}")
+    # Always fall back to / also check local storage (handles outage-saved records)
+    if not rec:
+        for r in MOCK_DATABASE.get("expenses", []):
+            if r.get('id') == expense_id:
+                rec = r
+                break
+    return rec
+
 @app.route('/api/expenses/<expense_id>', methods=['PUT', 'DELETE'])
 def expense_detail(expense_id):
     if request.method == 'PUT':
@@ -3043,20 +3062,7 @@ def expense_pdf(expense_id):
     import os
 
     try:
-        rec = None
-        if SUPABASE_CLIENT:
-            try:
-                resp = SUPABASE_CLIENT.table("expenses").select("*").eq("id", expense_id).execute()
-                if resp.data:
-                    rec = resp.data[0]
-            except Exception as e:
-                logger.error(f"Supabase expense fetch error: {e}")
-        else:
-            for r in MOCK_DATABASE.get("expenses", []):
-                if r['id'] == expense_id:
-                    rec = r
-                    break
-
+        rec = _get_expense_record(expense_id)
         if not rec:
             return jsonify({"error": "Expense record not found"}), 404
 
@@ -3209,20 +3215,7 @@ def expense_pdf(expense_id):
 @app.route('/api/expenses/<expense_id>/excel', methods=['GET'])
 def expense_excel(expense_id):
     try:
-        rec = None
-        if SUPABASE_CLIENT:
-            try:
-                resp = SUPABASE_CLIENT.table("expenses").select("*").eq("id", expense_id).execute()
-                if resp.data:
-                    rec = resp.data[0]
-            except Exception as e:
-                logger.error(f"Supabase expense fetch error: {e}")
-        else:
-            for r in MOCK_DATABASE.get("expenses", []):
-                if r['id'] == expense_id:
-                    rec = r
-                    break
-
+        rec = _get_expense_record(expense_id)
         if not rec:
             return jsonify({"error": "Expense record not found"}), 404
 
