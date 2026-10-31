@@ -821,6 +821,43 @@
                     padding: 24px; margin-bottom: 28px;
                 }
                 #sup-expense-form-wrap h3 { color: #D4AF37; margin-bottom: 18px; }
+
+                /* ── Material filter tabs ───────────────────────── */
+                .mat-tabs {
+                    display: flex; gap: 8px; flex-wrap: wrap;
+                    margin-bottom: 20px;
+                }
+                .mat-tab {
+                    padding: 8px 16px; border-radius: 20px; font-size: 13px;
+                    font-weight: 600; cursor: pointer; border: 1px solid #333;
+                    background: #1a1a1a; color: #888; transition: all .2s;
+                    letter-spacing: .3px;
+                }
+                .mat-tab:hover { border-color: #D4AF37; color: #D4AF37; }
+                .mat-tab.active {
+                    background: linear-gradient(135deg,#D4AF37,#b8860b);
+                    color: #111; border-color: #D4AF37;
+                }
+
+                /* ── Per-material breakdown grid ────────────────── */
+                .mat-breakdown-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                    gap: 12px; margin-bottom: 24px;
+                }
+                .mat-breakdown-card {
+                    background: #1e1e1e; border: 1px solid #333;
+                    border-radius: 10px; padding: 14px 16px;
+                    transition: border-color .2s;
+                    cursor: pointer;
+                }
+                .mat-breakdown-card:hover { border-color: #D4AF37; }
+                .mat-breakdown-card.active-mat { border-color: #D4AF37; background: #2a2410; }
+                .mbc-label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+                .mbc-name  { color: #D4AF37; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+                .mbc-total { color: #fff; font-size: 13px; font-weight: 600; }
+                .mbc-balance { color: #f87171; font-size: 12px; margin-top: 2px; }
+                .mbc-qty { color: #60a5fa; font-size: 12px; margin-top: 2px; }
             </style>
 
             <!-- Suppliers List View -->
@@ -947,10 +984,19 @@
                     </form>
                 </div>
 
+                <!-- Per-material breakdown cards -->
+                <div style="margin-bottom:20px;">
+                    <div style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">📊 Material-wise Breakdown</div>
+                    <div class="mat-breakdown-grid" id="mat-breakdown-grid"></div>
+                </div>
+
+                <!-- Material filter tabs -->
+                <div class="mat-tabs" id="mat-filter-tabs"></div>
+
                 <!-- Expense Records Table for this Supplier -->
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
                     <h3 style="color:#fff; font-size:16px;">Expense Records</h3>
-                    <div style="display:flex; gap:10px;">
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <input type="date" id="sup-filter-start" onchange="filterSupplierExpenses()"
                             style="background:#2a2a2a;border:1px solid #D4AF37;color:#fff;padding:8px 10px;border-radius:6px;font-size:13px;">
                         <input type="date" id="sup-filter-end" onchange="filterSupplierExpenses()"
@@ -1037,6 +1083,7 @@
         let _allSuppliers     = [];
         let _activeSupplier   = null;
         let _supplierExpenses = [];
+        let _activeMatFilter  = 'All';   // active material tab
 
         const fmt = n => '₹' + parseFloat(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 
@@ -1139,11 +1186,79 @@
                 const res  = await fetch(`/api/suppliers/${supplierId}/expenses`);
                 const json = await res.json();
                 _supplierExpenses = json.data || [];
-                renderSupplierExpenses(_supplierExpenses);
+                _activeMatFilter  = 'All';
+                buildMaterialTabs();
+                buildMaterialBreakdown();
+                filterSupplierExpenses();
                 updateSupplierDetailTotals(_supplierExpenses);
             } catch(e) {
                 console.error('Load supplier expenses error:', e);
             }
+        }
+
+        // ── Build material-type filter tabs ──────────────────────────────────
+        function buildMaterialTabs() {
+            const mats = _activeSupplier
+                ? (Array.isArray(_activeSupplier.materials_supplied)
+                    ? _activeSupplier.materials_supplied
+                    : (_activeSupplier.materials_supplied||'').split(',').filter(Boolean))
+                : MATERIALS_LIST;
+
+            // Only show tabs for materials that have at least one record (or All)
+            const usedMats = [...new Set(_supplierExpenses.map(r => r.material_type || r.category || '').filter(Boolean))];
+            const tabs = ['All', ...mats.filter(m => usedMats.includes(m))];
+
+            const container = document.getElementById('mat-filter-tabs');
+            container.innerHTML = tabs.map(t => {
+                const count = t === 'All' ? _supplierExpenses.length
+                    : _supplierExpenses.filter(r => (r.material_type||r.category) === t).length;
+                return `<button class="mat-tab${_activeMatFilter===t?' active':''}" onclick="setMatFilter('${t}')">
+                    ${t} <span style="font-size:11px;opacity:.7;">(${count})</span>
+                </button>`;
+            }).join('');
+        }
+
+        function setMatFilter(mat) {
+            _activeMatFilter = mat;
+            buildMaterialTabs();
+            buildMaterialBreakdown();
+            filterSupplierExpenses();
+        }
+
+        // ── Build per-material breakdown summary cards ────────────────────────
+        function buildMaterialBreakdown() {
+            const mats = _activeSupplier
+                ? (Array.isArray(_activeSupplier.materials_supplied)
+                    ? _activeSupplier.materials_supplied
+                    : (_activeSupplier.materials_supplied||'').split(',').filter(Boolean))
+                : MATERIALS_LIST;
+
+            const grid = document.getElementById('mat-breakdown-grid');
+            if (!_supplierExpenses.length) {
+                grid.innerHTML = '<div style="color:#888;font-size:13px;grid-column:1/-1;">No expense records yet.</div>';
+                return;
+            }
+
+            // Group by material
+            const grouped = {};
+            _supplierExpenses.forEach(r => {
+                const mat = r.material_type || r.category || 'Other';
+                if (!grouped[mat]) grouped[mat] = { total: 0, balance: 0, qty: 0, count: 0 };
+                grouped[mat].total   += parseFloat(r.total_amount || r.amount || 0);
+                grouped[mat].balance += parseFloat(r.balance_amount || 0);
+                grouped[mat].qty     += parseFloat(r.quantity || 0);
+                grouped[mat].count   += 1;
+            });
+
+            grid.innerHTML = Object.entries(grouped).map(([mat, d]) => `
+                <div class="mat-breakdown-card${_activeMatFilter===mat?' active-mat':''}" onclick="setMatFilter('${mat}')">
+                    <div class="mbc-label">${d.count} record${d.count!==1?'s':''}</div>
+                    <div class="mbc-name">${mat}</div>
+                    <div class="mbc-total">${fmt(d.total)}</div>
+                    <div class="mbc-balance">Bal: ${fmt(d.balance)}</div>
+                    <div class="mbc-qty">Qty: ${d.qty.toFixed(2)} T</div>
+                </div>
+            `).join('');
         }
 
         function renderSupplierExpenses(records) {
@@ -1195,6 +1310,11 @@
             const start = document.getElementById('sup-filter-start').value;
             const end   = document.getElementById('sup-filter-end').value;
             let filtered = _supplierExpenses;
+            // Apply material tab filter
+            if (_activeMatFilter && _activeMatFilter !== 'All') {
+                filtered = filtered.filter(r => (r.material_type || r.category) === _activeMatFilter);
+            }
+            // Apply date filters
             if (start) filtered = filtered.filter(r => r.date >= start);
             if (end)   filtered = filtered.filter(r => r.date <= end);
             renderSupplierExpenses(filtered);
@@ -1203,6 +1323,9 @@
         function clearSupFilter() {
             document.getElementById('sup-filter-start').value = '';
             document.getElementById('sup-filter-end').value   = '';
+            _activeMatFilter = 'All';
+            buildMaterialTabs();
+            buildMaterialBreakdown();
             renderSupplierExpenses(_supplierExpenses);
         }
 
