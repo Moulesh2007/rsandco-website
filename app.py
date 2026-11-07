@@ -2813,9 +2813,12 @@ def supplier_detail(supplier_id):
     if request.method == 'DELETE':
         if SUPABASE_CLIENT:
             try:
-                SUPABASE_CLIENT.table("suppliers").delete().eq("id", supplier_id).execute()
+                result = SUPABASE_CLIENT.table("suppliers").delete().eq("id", supplier_id).execute()
+                logger.info(f"Supplier {supplier_id} deleted from Supabase")
             except Exception as e:
                 logger.error(f"Supabase supplier delete error: {e}")
+                return jsonify({"success": False, "error": f"Database delete failed: {str(e)}"}), 500
+        # Also remove from local fallback cache
         MOCK_DATABASE["suppliers"] = [s for s in MOCK_DATABASE.get("suppliers", []) if s.get('id') != supplier_id]
         save_db()
         return jsonify({"success": True})
@@ -2934,31 +2937,30 @@ def expenses():
 
         if SUPABASE_CLIENT:
             try:
-                # Build a Supabase-safe record using only columns that exist in the schema.
-                # NOTE: expenses table does NOT have company_name - use supplier_name instead.
+                # Build Supabase record using ONLY columns that exist in the expenses table:
+                # id, category, date, description, material_type, quantity, rate_per_ton,
+                # amount, total_amount, advance_amount, balance_amount, created_at, created_by,
+                # gst_no, quality, supplier_id, supplier_name
+                # NOTE: company_name and supplier_payment_status columns do NOT exist.
                 supabase_record = {
-                    "id":               expense_record["id"],
-                    "category":         expense_record["category"],
-                    "date":             expense_record["date"],
-                    "description":      expense_record["description"],
-                    "gst_no":           expense_record["gst_no"],
-                    "supplier_id":      expense_record["supplier_id"],
-                    "supplier_name":    expense_record["supplier_name"] or expense_record["company_name"],
-                    "material_type":    expense_record["material_type"],
-                    "quantity":         expense_record["quantity"],
-                    "rate_per_ton":     expense_record["rate_per_ton"],
-                    "amount":           expense_record["amount"],
-                    "total_amount":     expense_record["total_amount"],
-                    "advance_amount":   expense_record["advance_amount"],
-                    "balance_amount":   expense_record["balance_amount"],
-                    "supplier_payment_status": expense_record["supplier_payment_status"],
-                    "created_at":       expense_record["created_at"],
-                    "created_by":       expense_record["created_by"],
+                    "id":            expense_record["id"],
+                    "category":      expense_record["category"],
+                    "date":          expense_record["date"],
+                    "description":   expense_record["description"],
+                    "gst_no":        expense_record["gst_no"],
+                    "supplier_id":   expense_record["supplier_id"],
+                    "supplier_name": expense_record["supplier_name"] or expense_record.get("company_name", ""),
+                    "material_type": expense_record["material_type"],
+                    "quality":       expense_record["quality"],
+                    "quantity":      expense_record["quantity"],
+                    "rate_per_ton":  expense_record["rate_per_ton"],
+                    "amount":        expense_record["amount"],
+                    "total_amount":  expense_record["total_amount"],
+                    "advance_amount":expense_record["advance_amount"],
+                    "balance_amount":expense_record["balance_amount"],
+                    "created_at":    expense_record["created_at"],
+                    "created_by":    expense_record["created_by"],
                 }
-                if data.get('quality'):
-                    supabase_record["quality"] = expense_record["quality"]
-                if expense_record.get("supplier_statement_id"):
-                    supabase_record["supplier_statement_id"] = expense_record["supplier_statement_id"]
                 response = SUPABASE_CLIENT.table("expenses").insert(supabase_record).execute()
                 # An insert must return the row we just wrote.
                 if not response.data:
