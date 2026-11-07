@@ -2760,10 +2760,19 @@ def suppliers_api():
             if not resp.data:
                 raise RuntimeError("Supabase did not confirm supplier insert")
         except Exception as e:
-            logger.error(f"Supabase supplier insert error: {e}. Falling back to local.")
-            MOCK_DATABASE.setdefault("suppliers", []).append(record)
-            save_db()
+            logger.exception("Supabase supplier insert failed")
+            return jsonify({
+                "success": False,
+                "error": "Supplier could not be saved to the database. Please check the database connection and suppliers table permissions, then try again."
+            }), 503
     else:
+        # Vercel functions are stateless: local memory and files do not survive
+        # between requests. Never report a supplier as saved in that mode.
+        if os.getenv('VERCEL'):
+            return jsonify({
+                "success": False,
+                "error": "Supplier storage is not configured. Connect Supabase before adding suppliers."
+            }), 503
         MOCK_DATABASE.setdefault("suppliers", []).append(record)
         save_db()
 
